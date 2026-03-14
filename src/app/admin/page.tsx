@@ -127,6 +127,12 @@ export default function AdminPage() {
         fetchAdminStats(),
       ]);
       
+      console.log("[Admin] === DEBUG: First 3 transactions from API ===");
+      console.log("[Admin] TXN 0:", JSON.stringify(transactions[0], null, 2));
+      console.log("[Admin] TXN 1:", JSON.stringify(transactions[1], null, 2));
+      console.log("[Admin] TXN 2:", JSON.stringify(transactions[2], null, 2));
+      console.log("[Admin] fraud_score values:", transactions.slice(0,5).map(t => t.fraud_score));
+      
       setUsersList(users);
       setTransactionsList(transactions);
       setLogsList(logs);
