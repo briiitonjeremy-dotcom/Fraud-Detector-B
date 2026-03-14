@@ -70,12 +70,11 @@ const defaultStats = {
 function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const rawAny = raw as any;
   
-  const transactionId = rawAny.transaction_id ?? rawAny.transactionId ?? rawAny.Transaction_ID ?? "";
-  const step = rawAny.step ?? rawAny.Step ?? 0;
+  const step = rawAny.step ?? rawAny.Step ?? rawAny.step ?? 0;
   const amount = rawAny.amount ?? rawAny.Amount ?? rawAny.AMOUNT ?? 0;
   const type = rawAny.type ?? rawAny.Type ?? rawAny.transaction_type ?? "";
   const nameOrig = rawAny.nameOrig ?? rawAny.nameorig ?? rawAny.sender ?? rawAny.sender_name ?? "";
-  const nameDest = rawAny.nameDest ?? rawAny.namedest ?? rawAny.recipient ?? rawAny.recipient_name ?? rawAny.dest ?? "";
+  const nameDest = rawAny.nameDest ?? rawAny.namedest ?? rawAny.dest ?? "";
   const recipientName = rawAny.recipient_name ?? rawAny.RecipientName ?? rawAny.recipient ?? "";
   const channel = rawAny.channel ?? rawAny.Channel ?? rawAny.transaction_channel ?? "";
   const region = rawAny.region ?? rawAny.Region ?? rawAny.location ?? "";
@@ -85,16 +84,29 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const oldbalanceDest = rawAny.oldbalanceDest ?? rawAny.old_balance_dest ?? rawAny.recipient_old_balance ?? 0;
   const newbalanceDest = rawAny.newbalanceDest ?? rawAny.new_balance_dest ?? rawAny.recipient_new_balance ?? 0;
   const deviceId = rawAny.device_id ?? rawAny.DeviceId ?? rawAny.device ?? "";
+  const phoneNumber = rawAny.phone_number ?? rawAny.phoneNumber ?? rawAny["phone number"] ?? "";
+  const idNumber = rawAny.id_number ?? rawAny.idNumber ?? rawAny["ID number"] ?? "";
+  
   const fraudScoreRaw = rawAny.fraud_score ?? rawAny.fraudScore ?? rawAny.Fraud_Score ?? rawAny.prediction ?? rawAny.Prediction ?? rawAny.score ?? 0;
-  const isFraud = rawAny.is_fraud ?? rawAny.isFraud ?? rawAny.Is_Fraud ?? rawAny.is_fraudulent ?? (typeof fraudScoreRaw === 'number' ? fraudScoreRaw >= 50 : false);
-  const fraudScore = typeof fraudScoreRaw === 'number' ? fraudScoreRaw : (fraudScoreRaw ? fraudScoreRaw * 100 : 0);
+  const riskLevelRaw = rawAny.risk_level ?? rawAny.riskLevel ?? rawAny.Risk_Level ?? "";
+  
+  const isFraud = rawAny.is_fraud ?? rawAny.isFraud ?? rawAny.Is_Fraud ?? rawAny.is_fraudulent ?? 
+    ((typeof fraudScoreRaw === 'number' ? fraudScoreRaw >= 50 : false) ||
+    (riskLevelRaw === 'HIGH' || riskLevelRaw === 'SUSPICIOUS'));
+    
+  const fraudScore = typeof fraudScoreRaw === 'number' ? fraudScoreRaw : 
+                     (typeof fraudScoreRaw === 'string' ? parseFloat(fraudScoreRaw) : 0);
+  
+  const finalFraudScore = isNaN(fraudScore) ? 0 : fraudScore;
+  
+  const finalRiskLevel = riskLevelRaw || (finalFraudScore >= 70 ? "HIGH" : finalFraudScore >= 50 ? "SUSPICIOUS" : finalFraudScore >= 30 ? "MEDIUM" : "LOW");
   
   return {
-    id: transactionId || (step > 0 ? `TXN-${step}` : (nameOrig ? `TXN-${nameOrig.substring(0, 8)}` : `TXN-${Date.now()}`)),
+    id: step > 0 ? `TXN-${step}` : (nameOrig ? `TXN-${nameOrig.substring(0, 8)}` : `TXN-${Date.now()}`),
     step: step,
     type: type,
     amount: amount,
-    sender: nameOrig || recipientName || nameDest || "",
+    sender: nameOrig || phoneNumber || idNumber || "",
     senderAccount: nameOrig || "",
     recipient: recipientName || nameDest || "",
     recipientAccount: nameDest || "",
@@ -106,10 +118,10 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
     channel: channel,
     region: region,
     deviceId: deviceId,
-    fraudScore: fraudScore,
+    fraudScore: finalFraudScore,
     isFraud: isFraud,
-    status: isFraud || fraudScore >= 50 ? "SUSPICIOUS" : "LEGITIMATE",
-    riskLevel: fraudScore >= 70 ? "HIGH" : fraudScore >= 40 ? "MEDIUM" : "LOW",
+    status: isFraud || finalFraudScore >= 50 ? "SUSPICIOUS" : "LEGITIMATE",
+    riskLevel: finalRiskLevel as "HIGH" | "MEDIUM" | "LOW",
   };
 }
 

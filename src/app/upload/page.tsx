@@ -214,25 +214,31 @@ export default function UploadPage() {
         // Extract predictions from ML response - /predict returns predictions array
         const predictions = data.predictions || data.results || [];
         
-        // Map predictions to transactions with fraud scores
-        const processedTransactions = predictions.map((pred: any, index: number) => {
-          const txn = pred.transaction || pred;
+        // Map predictions to transactions - combine original transaction data with ML predictions
+        const processedTransactions = transactions.map((txn: any, index: number) => {
+          const pred = predictions[index] || {};
           return {
             ...txn,
-            transaction_id: txn.transaction_id || txn.nameOrig || `TXN_${txn.step || 1}_${index + 1}`,
-            fraud_score: pred.prediction !== undefined ? pred.prediction * 100 : 
+            step: txn.step ?? index + 1,
+            transaction_id: pred.transaction_id || txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
+            fraud_score: pred.prediction !== undefined ? (typeof pred.prediction === 'number' ? pred.prediction * 100 : parseFloat(pred.prediction) * 100 || 0) : 
                         (pred.fraud_score !== undefined ? pred.fraud_score : null),
             is_fraud: pred.is_fraud !== undefined ? pred.is_fraud : 
-                     (pred.prediction !== undefined ? pred.prediction > 0.5 : false),
+                     (pred.prediction !== undefined ? (typeof pred.prediction === 'number' ? pred.prediction > 0.5 : parseFloat(pred.prediction) > 0.5) : false),
+            risk_level: pred.prediction !== undefined ? 
+                       (pred.prediction >= 0.7 || parseFloat(pred.prediction) >= 0.7 ? "HIGH" : 
+                        pred.prediction >= 0.5 || parseFloat(pred.prediction) >= 0.5 ? "SUSPICIOUS" : "LOW") : "LOW",
           };
         });
         
         // If no predictions returned, create from raw transactions
         const finalTransactions = processedTransactions.length > 0 ? processedTransactions : transactions.map((txn: any, index: number) => ({
           ...txn,
-          transaction_id: txn.transaction_id || txn.nameOrig || `TXN_${txn.step || 1}_${index + 1}`,
+          step: txn.step ?? index + 1,
+          transaction_id: txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
           fraud_score: null,
           is_fraud: false,
+          risk_level: "LOW",
         }));
         
         // Store ML-processed results in localStorage for dashboard
