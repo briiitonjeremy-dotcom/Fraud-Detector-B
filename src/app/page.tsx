@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { isAdmin, logout } from "@/lib/api";
+import { isAdmin, logout, fetchAdminTransactions } from "@/lib/api";
 
 const ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
@@ -27,6 +27,7 @@ interface RawTransaction {
   fraud_score?: number | null;
   prediction?: number | null;
   is_fraud?: boolean;
+  created_at?: string;
   [key: string]: any;
 }
 
@@ -548,22 +549,82 @@ export default function Dashboard() {
           }
         }
         
-        const storedTransactions = localStorage.getItem('fraudguard_transactions');
-        console.log("[Dashboard] localStorage fraudguard_transactions:", storedTransactions ? "exists" : "NOT FOUND");
-        if (storedTransactions && mounted) {
-          const txns: RawTransaction[] = JSON.parse(storedTransactions);
-          console.log("[Dashboard] === DEBUG: First 3 transactions from localStorage ===");
-          console.log("[Dashboard] TXN 0:", JSON.stringify(txns[0], null, 2));
-          console.log("[Dashboard] TXN 1:", JSON.stringify(txns[1], null, 2));
-          console.log("[Dashboard] TXN 2:", JSON.stringify(txns[2], null, 2));
-          console.log("[Dashboard] fraud_score field values:", txns.slice(0,5).map(t => t.fraud_score));
-          if (txns.length > 0) {
-            setRawTransactions(txns);
+        // Try to fetch from API first (same source as admin)
+        try {
+          const apiTransactions = await fetchAdminTransactions();
+          console.log("[Dashboard] === DEBUG: First 3 transactions from API ===");
+          console.log("[Dashboard] TXN 0:", JSON.stringify(apiTransactions[0], null, 2));
+          console.log("[Dashboard] TXN 1:", JSON.stringify(apiTransactions[1], null, 2));
+          console.log("[Dashboard] TXN 2:", JSON.stringify(apiTransactions[2], null, 2));
+          console.log("[Dashboard] fraud_score from API:", apiTransactions.slice(0,5).map(t => t.fraud_score));
+          
+          if (apiTransactions.length > 0 && mounted) {
+            // Convert API format to dashboard format
+            const convertedTxns: RawTransaction[] = apiTransactions.map((t: any) => ({
+              transaction_id: t.transaction_id,
+              step: parseInt(t.transaction_id?.replace('TXN-', '') || t.id || '0'),
+              type: t.type || '',
+              amount: t.amount || 0,
+              nameOrig: t.nameOrig || '',
+              nameDest: t.nameDest || '',
+              recipient_name: '',
+              channel: t.channel || '',
+              region: t.region || '',
+              device_id: '',
+              timestamp: t.created_at || '',
+              fraud_score: t.fraud_score || 0,
+              is_fraud: t.is_fraud || false,
+            }));
+            setRawTransactions(convertedTxns);
             setHasRealData(true);
-            console.log("[Dashboard] Set rawTransactions and hasRealData=true");
+            
+            // Update stats from API data
+            const fraudDetected = apiTransactions.filter((t: any) => t.is_fraud).length;
+            const avgScore = apiTransactions.length > 0 
+              ? apiTransactions.reduce((sum: number, t: any) => sum + (t.fraud_score || 0), 0) / apiTransactions.length 
+              : 0;
+            const highestScore = apiTransactions.length > 0 
+              ? Math.max(...apiTransactions.map((t: any) => t.fraud_score || 0))
+              : 0;
+            const emergingCount = apiTransactions.filter((t: any) => (t.fraud_score || 0) >= 15 && (t.fraud_score || 0) < 50).length;
+              
+            setStats({
+              totalTransactions: apiTransactions.length,
+              fraudDetected: fraudDetected,
+              fraudRate: avgScore,
+              riskScore: Math.round(highestScore),
+            });
+            
+            if (emergingCount > 0) {
+              setAlerts([{
+                time: "Just now",
+                severity: "medium",
+                message: `${emergingCount} transaction(s) flagged at 15%+ risk. Average batch score: ${avgScore.toFixed(1)}%. Highest: ${highestScore.toFixed(1)}%.`
+              }]);
+            }
+            
+            console.log("[Dashboard] Set rawTransactions from API, hasRealData=true");
           }
-        } else {
-          console.log("[Dashboard] No transactions in localStorage");
+        } catch (apiError) {
+          console.log("[Dashboard] API fetch failed, falling back to localStorage:", apiError);
+          // Fallback to localStorage
+          const storedTransactions = localStorage.getItem('fraudguard_transactions');
+          console.log("[Dashboard] localStorage fraudguard_transactions:", storedTransactions ? "exists" : "NOT FOUND");
+          if (storedTransactions && mounted) {
+            const txns: RawTransaction[] = JSON.parse(storedTransactions);
+            console.log("[Dashboard] === DEBUG: First 3 transactions from localStorage ===");
+            console.log("[Dashboard] TXN 0:", JSON.stringify(txns[0], null, 2));
+            console.log("[Dashboard] TXN 1:", JSON.stringify(txns[1], null, 2));
+            console.log("[Dashboard] TXN 2:", JSON.stringify(txns[2], null, 2));
+            console.log("[Dashboard] fraud_score field values:", txns.slice(0,5).map(t => t.fraud_score));
+            if (txns.length > 0) {
+              setRawTransactions(txns);
+              setHasRealData(true);
+              console.log("[Dashboard] Set rawTransactions and hasRealData=true");
+            }
+          } else {
+            console.log("[Dashboard] No transactions in localStorage");
+          }
         }
         
         const savedFraudCasesData = localStorage.getItem('fraudguard_fraud_cases');
