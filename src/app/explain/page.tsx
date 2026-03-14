@@ -398,9 +398,9 @@ export default function ExplainPage() {
                 </div>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontSize: "3rem", fontWeight: 700, 
-                    color: result.fraud_score > 0.7 ? "#ef4444" : result.fraud_score > 0.4 ? "#f59e0b" : "#10b981" 
+                    color: result.fraud_score >= 70 ? "#ef4444" : result.fraud_score >= 40 ? "#f59e0b" : "#10b981" 
                   }}>
-                    {Math.round(result.fraud_score * 100)}%
+                    {result.fraud_score.toFixed(1)}%
                   </div>
                   <div style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Fraud Score</div>
                 </div>
