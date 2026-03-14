@@ -157,7 +157,11 @@ export default function Dashboard() {
     const normalized = rawTransactions.map(normalizeTransaction);
     console.log("[Dashboard] Normalized transactions count:", normalized.length);
     if (normalized.length > 0) {
-      console.log("[Dashboard] Normalized sample:", normalized[0]);
+      console.log("[Dashboard] === DEBUG: First 3 normalized transactions ===");
+      console.log("[Dashboard] TXN 0:", JSON.stringify(normalized[0], null, 2));
+      console.log("[Dashboard] TXN 1:", JSON.stringify(normalized[1], null, 2));
+      console.log("[Dashboard] TXN 2:", JSON.stringify(normalized[2], null, 2));
+      console.log("[Dashboard] fraudScore values:", normalized.slice(0,5).map(t => t.fraudScore));
     }
     return normalized;
   }, [rawTransactions]);
@@ -548,8 +552,11 @@ export default function Dashboard() {
         console.log("[Dashboard] localStorage fraudguard_transactions:", storedTransactions ? "exists" : "NOT FOUND");
         if (storedTransactions && mounted) {
           const txns: RawTransaction[] = JSON.parse(storedTransactions);
-          console.log("[Dashboard] Raw transactions count:", txns.length);
-          console.log("[Dashboard] Raw transaction sample:", txns[0]);
+          console.log("[Dashboard] === DEBUG: First 3 transactions from localStorage ===");
+          console.log("[Dashboard] TXN 0:", JSON.stringify(txns[0], null, 2));
+          console.log("[Dashboard] TXN 1:", JSON.stringify(txns[1], null, 2));
+          console.log("[Dashboard] TXN 2:", JSON.stringify(txns[2], null, 2));
+          console.log("[Dashboard] fraud_score field values:", txns.slice(0,5).map(t => t.fraud_score));
           if (txns.length > 0) {
             setRawTransactions(txns);
             setHasRealData(true);

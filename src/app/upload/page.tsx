@@ -217,19 +217,34 @@ export default function UploadPage() {
         // Map predictions to transactions - combine original transaction data with ML predictions
         const processedTransactions = transactions.map((txn: any, index: number) => {
           const pred = predictions[index] || {};
+          
+          let fraudScore = 0;
+          if (pred.prediction !== undefined) {
+            const predVal = typeof pred.prediction === 'number' ? pred.prediction : parseFloat(pred.prediction);
+            fraudScore = predVal * 100;
+          } else if (pred.fraud_score !== undefined) {
+            fraudScore = Number(pred.fraud_score);
+          }
+          
+          const isFraud = pred.is_fraud === true || (typeof fraudScore === 'number' && fraudScore >= 50);
+          
           return {
             ...txn,
             step: txn.step ?? index + 1,
             transaction_id: pred.transaction_id || txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
-            fraud_score: pred.prediction !== undefined ? (typeof pred.prediction === 'number' ? pred.prediction * 100 : parseFloat(pred.prediction) * 100 || 0) : 
-                        (pred.fraud_score !== undefined ? pred.fraud_score : null),
-            is_fraud: pred.is_fraud !== undefined ? pred.is_fraud : 
-                     (pred.prediction !== undefined ? (typeof pred.prediction === 'number' ? pred.prediction > 0.5 : parseFloat(pred.prediction) > 0.5) : false),
-            risk_level: pred.prediction !== undefined ? 
-                       (pred.prediction >= 0.7 || parseFloat(pred.prediction) >= 0.7 ? "HIGH" : 
-                        pred.prediction >= 0.5 || parseFloat(pred.prediction) >= 0.5 ? "SUSPICIOUS" : "LOW") : "LOW",
+            fraud_score: fraudScore,
+            prediction: pred.prediction,
+            is_fraud: isFraud,
+            risk_level: fraudScore >= 70 ? "HIGH" : fraudScore >= 50 ? "SUSPICIOUS" : fraudScore >= 30 ? "MEDIUM" : "LOW",
           };
         });
+        
+        console.log("[Upload] === DEBUG: First 3 processed transactions ===");
+        console.log("[Upload] TXN 0:", JSON.stringify(processedTransactions[0], null, 2));
+        console.log("[Upload] TXN 1:", JSON.stringify(processedTransactions[1], null, 2));
+        console.log("[Upload] TXN 2:", JSON.stringify(processedTransactions[2], null, 2));
+        console.log("[Upload] predictions[0]:", JSON.stringify(predictions[0], null, 2));
+        console.log("[Upload] transactions[0]:", JSON.stringify(transactions[0], null, 2));
         
         // If no predictions returned, create from raw transactions
         const finalTransactions = processedTransactions.length > 0 ? processedTransactions : transactions.map((txn: any, index: number) => ({
