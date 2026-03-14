@@ -13,6 +13,7 @@ import os
 import logging
 import time
 import uuid
+from datetime import datetime
 import hashlib
 from functools import wraps
 from flask import Flask, request, jsonify, g
@@ -604,6 +605,21 @@ def predict():
                 'is_fraud': bool(all_predictions[i]) if i < len(all_predictions) else False,
             }
             results.append(tx_result)
+            
+            # Also store to TRANSACTIONS_DB for admin page consistency
+            TRANSACTIONS_DB.append({
+                'id': len(TRANSACTIONS_DB) + 1,
+                'transaction_id': tx_result['transaction_id'],
+                'amount': float(tx.get('amount', 0)),
+                'fraud_score': float(all_probabilities[i] * 100) if i < len(all_probabilities) else 0,
+                'is_fraud': tx_result['is_fraud'],
+                'type': tx.get('type', ''),
+                'nameOrig': tx.get('nameOrig', ''),
+                'nameDest': tx.get('nameDest', ''),
+                'channel': tx.get('channel', ''),
+                'region': tx.get('region', ''),
+                'created_at': datetime.now().isoformat()
+            })
         
         total_time = time.time() - request_start
         logger.info(f"TOTAL RESPONSE TIME: {total_time:.2f}s")
