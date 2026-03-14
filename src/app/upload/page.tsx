@@ -249,17 +249,33 @@ export default function UploadPage() {
           const allTxns = [...finalTransactions, ...existingTxns];
           localStorage.setItem('fraudguard_transactions', JSON.stringify(allTxns));
           
+          console.log("[Upload] Stored transactions sample:", finalTransactions[0]);
+          console.log("[Upload] fraud_score field:", finalTransactions[0]?.fraud_score);
+          console.log("[Upload] prediction field:", finalTransactions[0]?.prediction);
+          
           // Count fraud cases
           const fraudCount = finalTransactions.filter((t: any) => t.is_fraud).length;
+          const avgScore = finalTransactions.length > 0 
+            ? finalTransactions.reduce((sum: number, t: any) => sum + (Number(t.fraud_score) || 0), 0) / finalTransactions.length 
+            : 0;
+          const emergingCount = finalTransactions.filter((t: any) => (Number(t.fraud_score) || 0) >= 15 && (Number(t.fraud_score) || 0) < 50).length;
+          const highestScore = finalTransactions.length > 0 
+            ? Math.max(...finalTransactions.map((t: any) => Number(t.fraud_score) || 0)) 
+            : 0;
           
-          // Store summary results
+          // Store summary results with enhanced analytics
           localStorage.setItem('fraudguard_results', JSON.stringify({
             total_transactions: finalTransactions.length,
             fraud_detected: fraudCount,
             fraud_rate: finalTransactions.length > 0 ? (fraudCount / finalTransactions.length * 100) : 0,
+            average_fraud_score: avgScore,
+            emerging_risk_count: emergingCount,
+            highest_fraud_score: highestScore,
             predictions: finalTransactions,
             processedAt: new Date().toISOString()
           }));
+          
+          console.log("[Upload] Summary - avg score:", avgScore, "emerging:", emergingCount, "highest:", highestScore);
         } catch (e) {
           console.error("[Upload] localStorage error:", e);
         }

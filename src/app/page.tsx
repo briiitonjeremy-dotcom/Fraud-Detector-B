@@ -34,6 +34,9 @@ interface ProcessedResults {
   total_transactions: number;
   fraud_detected: number;
   fraud_rate: number;
+  average_fraud_score?: number;
+  emerging_risk_count?: number;
+  highest_fraud_score?: number;
   processedAt?: string;
 }
 
@@ -70,43 +73,50 @@ const defaultStats = {
 function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const rawAny = raw as any;
   
-  const step = rawAny.step ?? rawAny.Step ?? rawAny.step ?? 0;
-  const amount = rawAny.amount ?? rawAny.Amount ?? rawAny.AMOUNT ?? 0;
-  const type = rawAny.type ?? rawAny.Type ?? rawAny.transaction_type ?? "";
-  const nameOrig = rawAny.nameOrig ?? rawAny.nameorig ?? rawAny.sender ?? rawAny.sender_name ?? "";
-  const nameDest = rawAny.nameDest ?? rawAny.namedest ?? rawAny.dest ?? "";
-  const recipientName = rawAny.recipient_name ?? rawAny.RecipientName ?? rawAny.recipient ?? "";
-  const channel = rawAny.channel ?? rawAny.Channel ?? rawAny.transaction_channel ?? "";
-  const region = rawAny.region ?? rawAny.Region ?? rawAny.location ?? "";
-  const timestamp = rawAny.timestamp ?? rawAny.Timestamp ?? rawAny.date ?? rawAny.datetime ?? "";
-  const oldbalanceOrg = rawAny.oldbalanceOrg ?? rawAny.old_balance_orig ?? rawAny.sender_old_balance ?? 0;
-  const newbalanceOrig = rawAny.newbalanceOrig ?? rawAny.new_balance_orig ?? rawAny.sender_new_balance ?? 0;
-  const oldbalanceDest = rawAny.oldbalanceDest ?? rawAny.old_balance_dest ?? rawAny.recipient_old_balance ?? 0;
-  const newbalanceDest = rawAny.newbalanceDest ?? rawAny.new_balance_dest ?? rawAny.recipient_new_balance ?? 0;
-  const deviceId = rawAny.device_id ?? rawAny.DeviceId ?? rawAny.device ?? "";
-  const phoneNumber = rawAny.phone_number ?? rawAny.phoneNumber ?? rawAny["phone number"] ?? "";
-  const idNumber = rawAny.id_number ?? rawAny.idNumber ?? rawAny["ID number"] ?? "";
+  const step = Number(rawAny.step) || 0;
+  const amount = Number(rawAny.amount) || 0;
+  const type = rawAny.type || rawAny.Type || "";
+  const nameOrig = rawAny.nameOrig || rawAny.nameorig || "";
+  const nameDest = rawAny.nameDest || rawAny.namedest || rawAny.dest || "";
+  const recipientName = rawAny.recipient_name || rawAny.RecipientName || rawAny.recipient || "";
+  const channel = rawAny.channel || rawAny.Channel || "";
+  const region = rawAny.region || rawAny.Region || "";
+  const timestamp = rawAny.timestamp || rawAny.Timestamp || "";
+  const oldbalanceOrg = Number(rawAny.oldbalanceOrg) || 0;
+  const newbalanceOrig = Number(rawAny.newbalanceOrig) || 0;
+  const oldbalanceDest = Number(rawAny.oldbalanceDest) || 0;
+  const newbalanceDest = Number(rawAny.newbalanceDest) || 0;
+  const deviceId = rawAny.device_id || rawAny.DeviceId || "";
   
-  const fraudScoreRaw = rawAny.fraud_score ?? rawAny.fraudScore ?? rawAny.Fraud_Score ?? rawAny.prediction ?? rawAny.Prediction ?? rawAny.score ?? 0;
-  const riskLevelRaw = rawAny.risk_level ?? rawAny.riskLevel ?? rawAny.Risk_Level ?? "";
+  const fraudScoreRaw = rawAny.fraud_score;
+  const predictionRaw = rawAny.prediction;
+  const riskLevelRaw = rawAny.risk_level || rawAny.riskLevel || "";
   
-  const isFraud = rawAny.is_fraud ?? rawAny.isFraud ?? rawAny.Is_Fraud ?? rawAny.is_fraudulent ?? 
-    ((typeof fraudScoreRaw === 'number' ? fraudScoreRaw >= 50 : false) ||
-    (riskLevelRaw === 'HIGH' || riskLevelRaw === 'SUSPICIOUS'));
-    
-  const fraudScore = typeof fraudScoreRaw === 'number' ? fraudScoreRaw : 
-                     (typeof fraudScoreRaw === 'string' ? parseFloat(fraudScoreRaw) : 0);
+  let fraudScore = 0;
+  if (typeof fraudScoreRaw === 'number' && !isNaN(fraudScoreRaw)) {
+    fraudScore = fraudScoreRaw;
+  } else if (typeof fraudScoreRaw === 'string' && fraudScoreRaw) {
+    fraudScore = parseFloat(fraudScoreRaw);
+  } else if (typeof predictionRaw === 'number' && !isNaN(predictionRaw)) {
+    fraudScore = predictionRaw * 100;
+  } else if (typeof predictionRaw === 'string' && predictionRaw) {
+    fraudScore = parseFloat(predictionRaw) * 100;
+  }
   
-  const finalFraudScore = isNaN(fraudScore) ? 0 : fraudScore;
+  if (isNaN(fraudScore)) fraudScore = 0;
   
-  const finalRiskLevel = riskLevelRaw || (finalFraudScore >= 70 ? "HIGH" : finalFraudScore >= 50 ? "SUSPICIOUS" : finalFraudScore >= 30 ? "MEDIUM" : "LOW");
+  const isFraud = rawAny.is_fraud === true || rawAny.isFraud === true || 
+    (typeof fraudScore === 'number' && fraudScore >= 50);
+  
+  const finalRiskLevel = riskLevelRaw || 
+    (fraudScore >= 70 ? "HIGH" : fraudScore >= 50 ? "SUSPICIOUS" : fraudScore >= 30 ? "MEDIUM" : "LOW");
   
   return {
     id: step > 0 ? `TXN-${step}` : (nameOrig ? `TXN-${nameOrig.substring(0, 8)}` : `TXN-${Date.now()}`),
     step: step,
     type: type,
     amount: amount,
-    sender: nameOrig || phoneNumber || idNumber || "",
+    sender: nameOrig || recipientName || nameDest || "",
     senderAccount: nameOrig || "",
     recipient: recipientName || nameDest || "",
     recipientAccount: nameDest || "",
@@ -118,9 +128,9 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
     channel: channel,
     region: region,
     deviceId: deviceId,
-    fraudScore: finalFraudScore,
+    fraudScore: fraudScore,
     isFraud: isFraud,
-    status: isFraud || finalFraudScore >= 50 ? "SUSPICIOUS" : "LEGITIMATE",
+    status: isFraud || fraudScore >= 50 ? "SUSPICIOUS" : "LEGITIMATE",
     riskLevel: finalRiskLevel as "HIGH" | "MEDIUM" | "LOW",
   };
 }
@@ -494,16 +504,26 @@ export default function Dashboard() {
         const storedData = localStorage.getItem('fraudguard_results');
         if (storedData && mounted) {
           const parsed: ProcessedResults = JSON.parse(storedData);
+          console.log("[Dashboard] Results from localStorage:", parsed);
+          console.log("[Dashboard] avg_fraud_score:", parsed.average_fraud_score);
+          console.log("[Dashboard] emerging_risk_count:", parsed.emerging_risk_count);
+          console.log("[Dashboard] highest_fraud_score:", parsed.highest_fraud_score);
           setStats({
             totalTransactions: parsed.total_transactions || 0,
             fraudDetected: parsed.fraud_detected || 0,
-            fraudRate: parsed.fraud_rate || 0,
-            riskScore: Math.round((parsed.fraud_rate || 0) * 10),
+            fraudRate: parsed.fraud_rate || parsed.average_fraud_score || 0,
+            riskScore: Math.round(parsed.highest_fraud_score || parsed.average_fraud_score || parsed.fraud_rate || 0),
           });
           setProcessedAt(parsed.processedAt || "");
           setHasRealData(true);
 
-          if (parsed.fraud_rate > 10) {
+          if ((parsed.emerging_risk_count || 0) > 0) {
+            setAlerts([{
+              time: "Just now",
+              severity: "medium",
+              message: `${parsed.emerging_risk_count} transaction(s) flagged at 15%+ risk. Average batch score: ${(parsed.average_fraud_score || 0).toFixed(1)}%. Highest: ${(parsed.highest_fraud_score || 0).toFixed(1)}%.`
+            }]);
+          } else if (parsed.fraud_rate > 10) {
             setAlerts([{
               time: "Just now",
               severity: "high",
