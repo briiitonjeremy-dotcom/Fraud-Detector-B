@@ -137,6 +137,149 @@ export default function Dashboard() {
     return transactions.filter(t => t.isFraud || t.fraudScore >= 50);
   }, [transactions]);
 
+  const advancedAnalysis = useMemo(() => {
+    if (transactions.length === 0) return null;
+
+    const riskDistribution = {
+      high: transactions.filter(t => t.fraudScore >= 70).length,
+      medium: transactions.filter(t => t.fraudScore >= 40 && t.fraudScore < 70).length,
+      low: transactions.filter(t => t.fraudScore < 40).length,
+    };
+
+    const fraudByType = transactions.reduce((acc, t) => {
+      const type = t.type || 'UNKNOWN';
+      if (t.isFraud || t.fraudScore >= 50) {
+        acc[type] = (acc[type] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topFraudTypes = Object.entries(fraudByType)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([type, count]) => ({ type, count }));
+
+    const fraudByChannel = transactions.reduce((acc, t) => {
+      const channel = t.channel || 'UNKNOWN';
+      if (t.isFraud || t.fraudScore >= 50) {
+        acc[channel] = (acc[channel] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topFraudChannels = Object.entries(fraudByChannel)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([channel, count]) => ({ channel, count }));
+
+    const fraudByRegion = transactions.reduce((acc, t) => {
+      const region = t.region || 'UNKNOWN';
+      if (t.isFraud || t.fraudScore >= 50) {
+        acc[region] = (acc[region] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topFraudRegions = Object.entries(fraudByRegion)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([region, count]) => ({ region, count }));
+
+    const recipientCounts = transactions.reduce((acc, t) => {
+      const recipient = t.recipient || t.recipientAccount || 'UNKNOWN';
+      if (t.isFraud || t.fraudScore >= 50) {
+        acc[recipient] = (acc[recipient] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const repeatedRecipients = Object.entries(recipientCounts)
+      .filter(([_, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([recipient, count]) => ({ recipient, count }));
+
+    const senderCounts = transactions.reduce((acc, t) => {
+      const sender = t.sender || t.senderAccount || 'UNKNOWN';
+      if (t.isFraud || t.fraudScore >= 50) {
+        acc[sender] = (acc[sender] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const repeatedSenders = Object.entries(senderCounts)
+      .filter(([_, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([sender, count]) => ({ sender, count }));
+
+    const amountClusters = transactions
+      .filter(t => t.isFraud || t.fraudScore >= 50)
+      .reduce((acc, t) => {
+        const bucket = Math.floor(t.amount / 10000) * 10000;
+        acc[bucket] = (acc[bucket] || 0) + 1;
+        return acc;
+      }, {} as Record<number, number>);
+
+    const topAmountClusters = Object.entries(amountClusters)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([bucket, count]) => ({ 
+        range: `${Number(bucket).toLocaleString()}-${Number(bucket + 9999).toLocaleString()}`,
+        count 
+      }));
+
+    const avgFraudScore = transactions.length > 0
+      ? transactions.reduce((sum, t) => sum + t.fraudScore, 0) / transactions.length
+      : 0;
+
+    const highRiskCount = transactions.filter(t => t.fraudScore >= 70).length;
+    const mediumRiskCount = transactions.filter(t => t.fraudScore >= 40 && t.fraudScore < 70).length;
+    const lowRiskCount = transactions.filter(t => t.fraudScore < 40).length;
+
+    let summary = "";
+    if (highRiskCount > 0) {
+      const topType = topFraudTypes[0]?.type || 'N/A';
+      const topRegion = topFraudRegions[0]?.region || 'N/A';
+      const topChannel = topFraudChannels[0]?.channel || 'N/A';
+      
+      summary = `This batch shows ${highRiskCount} high-risk transactions (${((highRiskCount / transactions.length) * 100).toFixed(1)}% of total). `;
+      summary += `Fraud is concentrated in ${topType} transactions`;
+      if (topRegion !== 'UNKNOWN' && topRegion !== 'N/A') {
+        summary += ` from ${topRegion}`;
+      }
+      if (topChannel !== 'UNKNOWN' && topChannel !== 'N/A') {
+        summary += ` via ${topChannel}`;
+      }
+      summary += `. Average fraud score: ${avgFraudScore.toFixed(1)}%.`;
+      
+      if (repeatedRecipients.length > 0) {
+        summary += ` ${repeatedRecipients.length} recipient(s) appear multiple times in suspicious transactions.`;
+      }
+    } else if (mediumRiskCount > 0) {
+      summary = `This batch contains ${mediumRiskCount} medium-risk transactions. `;
+      summary += `Overall fraud risk is moderate with average score of ${avgFraudScore.toFixed(1)}%. `;
+      summary += "Monitor for unusual patterns.";
+    } else {
+      summary = `This batch appears relatively safe with ${lowRiskCount} low-risk transactions. `;
+      summary += `Average fraud score: ${avgFraudScore.toFixed(1)}%. No significant fraud patterns detected.`;
+    }
+
+    return {
+      riskDistribution,
+      topFraudTypes,
+      topFraudChannels,
+      topFraudRegions,
+      repeatedRecipients,
+      repeatedSenders,
+      topAmountClusters,
+      avgFraudScore,
+      summary,
+      totalAnalyzed: transactions.length,
+      suspiciousCount: suspiciousTransactions.length,
+    };
+  }, [transactions, suspiciousTransactions]);
+
   const navItems = [
     { href: "/", icon: "⬡", label: "Dashboard", active: true },
     { href: "/upload", icon: "⇪", label: "Upload Dataset", active: false },
@@ -873,6 +1016,255 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {advancedAnalysis ? (
+          <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid rgba(168, 85, 247, 0.3)" }}>
+            <div className="card-header">
+              <h3 className="card-title" style={{ color: "#a855f7" }}>
+                🔬 Advanced Fraud Intelligence
+              </h3>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                {advancedAnalysis.totalAnalyzed} transactions analyzed
+              </span>
+            </div>
+
+            <div style={{ 
+              padding: "1rem", 
+              background: "rgba(168, 85, 247, 0.08)", 
+              borderRadius: "8px", 
+              marginBottom: "1.5rem",
+              border: "1px solid rgba(168, 85, 247, 0.2)"
+            }}>
+              <div style={{ fontSize: "0.75rem", color: "#a855f7", marginBottom: "0.5rem", fontWeight: 600, textTransform: "uppercase" }}>
+                Intelligence Summary
+              </div>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem", lineHeight: "1.6", margin: 0 }}>
+                {advancedAnalysis.summary}
+              </p>
+            </div>
+
+            <div className="grid-2" style={{ marginBottom: "1.5rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Risk Distribution
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {[
+                    { label: "High Risk", count: advancedAnalysis.riskDistribution.high, color: "#ef4444", bg: "rgba(239, 68, 68, 0.15)" },
+                    { label: "Medium Risk", count: advancedAnalysis.riskDistribution.medium, color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" },
+                    { label: "Low Risk", count: advancedAnalysis.riskDistribution.low, color: "#10b981", bg: "rgba(16, 185, 129, 0.15)" },
+                  ].map((item) => (
+                    <div key={item.label} style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                      <div style={{ 
+                        width: "100px", 
+                        fontSize: "0.8125rem", 
+                        color: "var(--text-secondary)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem"
+                      }}>
+                        <span style={{ 
+                          width: "8px", 
+                          height: "8px", 
+                          borderRadius: "50%", 
+                          background: item.color 
+                        }} />
+                        {item.label}
+                      </div>
+                      <div style={{ flex: 1, height: "24px", background: item.bg, borderRadius: "6px", overflow: "hidden" }}>
+                        <div style={{ 
+                          width: `${(item.count / advancedAnalysis.totalAnalyzed) * 100}%`, 
+                          height: "100%", 
+                          background: item.color,
+                          borderRadius: "6px",
+                          transition: "width 0.5s ease"
+                        }} />
+                      </div>
+                      <div style={{ width: "50px", textAlign: "right", fontSize: "0.875rem", fontWeight: 600, color: item.color }}>
+                        {item.count}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Top Fraud Channels
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {advancedAnalysis.topFraudChannels.length > 0 ? advancedAnalysis.topFraudChannels.map((item, i) => (
+                    <div key={i} style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between", 
+                      alignItems: "center",
+                      padding: "0.5rem 0.75rem",
+                      background: "rgba(0, 0, 0, 0.2)",
+                      borderRadius: "6px",
+                      fontSize: "0.8125rem"
+                    }}>
+                      <span style={{ color: "var(--text-secondary)" }}>{item.channel}</span>
+                      <span style={{ 
+                        padding: "0.125rem 0.5rem", 
+                        borderRadius: "4px", 
+                        background: "rgba(239, 68, 68, 0.15)", 
+                        color: "#ef4444",
+                        fontWeight: 600,
+                        fontSize: "0.75rem"
+                      }}>
+                        {item.count}
+                      </span>
+                    </div>
+                  )) : (
+                    <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", fontStyle: "italic" }}>
+                      No channel data available
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid-2">
+              <div>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Top Fraud Regions
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {advancedAnalysis.topFraudRegions.length > 0 ? advancedAnalysis.topFraudRegions.map((item, i) => (
+                    <div key={i} style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between", 
+                      alignItems: "center",
+                      padding: "0.5rem 0.75rem",
+                      background: "rgba(0, 0, 0, 0.2)",
+                      borderRadius: "6px",
+                      fontSize: "0.8125rem"
+                    }}>
+                      <span style={{ color: "var(--text-secondary)" }}>{item.region}</span>
+                      <span style={{ 
+                        padding: "0.125rem 0.5rem", 
+                        borderRadius: "4px", 
+                        background: "rgba(245, 158, 11, 0.15)", 
+                        color: "#f59e0b",
+                        fontWeight: 600,
+                        fontSize: "0.75rem"
+                      }}>
+                        {item.count}
+                      </span>
+                    </div>
+                  )) : (
+                    <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", fontStyle: "italic" }}>
+                      No region data available
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Repeated Suspicious Recipients
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {advancedAnalysis.repeatedRecipients.length > 0 ? advancedAnalysis.repeatedRecipients.map((item, i) => (
+                    <div key={i} style={{ 
+                      display: "flex", 
+                      justifyContent: "space-between", 
+                      alignItems: "center",
+                      padding: "0.5rem 0.75rem",
+                      background: "rgba(0, 0, 0, 0.2)",
+                      borderRadius: "6px",
+                      fontSize: "0.8125rem"
+                    }}>
+                      <span style={{ color: "var(--text-secondary)", maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.recipient}
+                      </span>
+                      <span style={{ 
+                        padding: "0.125rem 0.5rem", 
+                        borderRadius: "4px", 
+                        background: "rgba(168, 85, 247, 0.15)", 
+                        color: "#a855f7",
+                        fontWeight: 600,
+                        fontSize: "0.75rem"
+                      }}>
+                        {item.count}x
+                      </span>
+                    </div>
+                  )) : (
+                    <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", fontStyle: "italic" }}>
+                      No repeated recipients detected
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {advancedAnalysis.topFraudTypes.length > 0 && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Fraud by Transaction Type
+                </h4>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {advancedAnalysis.topFraudTypes.map((item, i) => (
+                    <span key={i} style={{ 
+                      padding: "0.5rem 1rem",
+                      borderRadius: "8px",
+                      background: "rgba(239, 68, 68, 0.1)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      color: "var(--text-secondary)",
+                      fontSize: "0.8125rem",
+                      fontWeight: 500
+                    }}>
+                      {item.type}: <span style={{ color: "#ef4444", fontWeight: 700 }}>{item.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {advancedAnalysis.topAmountClusters.length > 0 && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h4 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Amount Clusters (High Risk)
+                </h4>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {advancedAnalysis.topAmountClusters.map((item, i) => (
+                    <span key={i} style={{ 
+                      padding: "0.5rem 1rem",
+                      borderRadius: "8px",
+                      background: "rgba(245, 158, 11, 0.1)",
+                      border: "1px solid rgba(245, 158, 11, 0.3)",
+                      color: "var(--text-secondary)",
+                      fontSize: "0.8125rem",
+                      fontWeight: 500
+                    }}>
+                      KES {item.range}: <span style={{ color: "#f59e0b", fontWeight: 700 }}>{item.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid rgba(168, 85, 247, 0.2)" }}>
+            <div className="card-header">
+              <h3 className="card-title" style={{ color: "#a855f7" }}>
+                🔬 Advanced Fraud Intelligence
+              </h3>
+            </div>
+            <div style={{ 
+              display: "flex", 
+              flexDirection: "column",
+              alignItems: "center", 
+              justifyContent: "center", 
+              padding: "3rem 1rem" 
+            }}>
+              <div style={{ fontSize: "3rem", marginBottom: "1rem", opacity: 0.3 }}>🔬</div>
+              <p style={{ color: "var(--text-muted)", textAlign: "center", maxWidth: "400px" }}>
+                Upload and process a dataset to view advanced fraud analysis and intelligence breakdown
+              </p>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: "1.5rem" }}>
           <h3 style={{ marginBottom: "1rem", color: "var(--text-secondary)" }}>Quick Actions</h3>
