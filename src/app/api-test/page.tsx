@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { isAdmin, isLoggedIn, logout, getUserRole } from "@/lib/api";
 
-const DEFAULT_ML_SERVICE_URL = "https://ml-file-for-url.onrender.com";
+const DEFAULT_ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
 interface EndpointTest {
   name: string;

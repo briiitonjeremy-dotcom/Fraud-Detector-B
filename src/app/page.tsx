@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { isAdmin, logout } from "@/lib/api";
 
-const ML_SERVICE_URL = "https://ml-file-for-url.onrender.com";
+const ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
 interface RawTransaction {
   step?: number;

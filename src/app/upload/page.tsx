@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { isAdmin, isLoggedIn, logout, getUserRole } from "@/lib/api";
 
-const ML_SERVICE_URL = "https://ml-file-for-url.onrender.com";
+const ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
 const navItems = [
   { href: "/", icon: "📊", label: "Dashboard", active: false },
