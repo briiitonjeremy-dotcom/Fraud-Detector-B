@@ -93,15 +93,18 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const predictionRaw = rawAny.prediction;
   const riskLevelRaw = rawAny.risk_level || rawAny.riskLevel || "";
   
+  // Normalize fraud score: if <= 1, treat as decimal and convert to percentage
   let fraudScore = 0;
   if (typeof fraudScoreRaw === 'number' && !isNaN(fraudScoreRaw)) {
-    fraudScore = fraudScoreRaw;
+    fraudScore = fraudScoreRaw <= 1 ? fraudScoreRaw * 100 : fraudScoreRaw;
   } else if (typeof fraudScoreRaw === 'string' && fraudScoreRaw) {
-    fraudScore = parseFloat(fraudScoreRaw);
+    const parsed = parseFloat(fraudScoreRaw);
+    fraudScore = parsed <= 1 ? parsed * 100 : parsed;
   } else if (typeof predictionRaw === 'number' && !isNaN(predictionRaw)) {
-    fraudScore = predictionRaw * 100;
+    fraudScore = predictionRaw <= 1 ? predictionRaw * 100 : predictionRaw * 100;
   } else if (typeof predictionRaw === 'string' && predictionRaw) {
-    fraudScore = parseFloat(predictionRaw) * 100;
+    const parsed = parseFloat(predictionRaw);
+    fraudScore = parsed <= 1 ? parsed * 100 : parsed * 100;
   }
   
   if (isNaN(fraudScore)) fraudScore = 0;
@@ -134,6 +137,11 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
     status: isFraud || fraudScore >= 50 ? "SUSPICIOUS" : "LEGITIMATE",
     riskLevel: finalRiskLevel as "HIGH" | "MEDIUM" | "LOW",
   };
+}
+
+function normalizeFraudScore(score: number): number {
+  if (typeof score !== 'number' || isNaN(score)) return 0;
+  return score <= 1 ? score * 100 : score;
 }
 
 export default function Dashboard() {
@@ -578,15 +586,18 @@ export default function Dashboard() {
             setRawTransactions(convertedTxns);
             setHasRealData(true);
             
-            // Update stats from API data
+            // Update stats from API data - normalize fraud scores
             const fraudDetected = apiTransactions.filter((t: any) => t.is_fraud).length;
             const avgScore = apiTransactions.length > 0 
-              ? apiTransactions.reduce((sum: number, t: any) => sum + (t.fraud_score || 0), 0) / apiTransactions.length 
+              ? apiTransactions.reduce((sum: number, t: any) => sum + normalizeFraudScore(t.fraud_score || 0), 0) / apiTransactions.length 
               : 0;
             const highestScore = apiTransactions.length > 0 
-              ? Math.max(...apiTransactions.map((t: any) => t.fraud_score || 0))
+              ? Math.max(...apiTransactions.map((t: any) => normalizeFraudScore(t.fraud_score || 0)))
               : 0;
-            const emergingCount = apiTransactions.filter((t: any) => (t.fraud_score || 0) >= 15 && (t.fraud_score || 0) < 50).length;
+            const emergingCount = apiTransactions.filter((t: any) => {
+              const score = normalizeFraudScore(t.fraud_score || 0);
+              return score >= 15 && score < 50;
+            }).length;
               
             setStats({
               totalTransactions: apiTransactions.length,
