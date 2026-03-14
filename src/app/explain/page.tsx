@@ -2,11 +2,62 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { isAdmin, isLoggedIn, logout, getUserRole } from "@/lib/api";
+import { isAdmin, isLoggedIn, logout, getUserRole, fetchAdminTransactions } from "@/lib/api";
 
 const ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
-// Dynamic navItems will be set in component
+function normalizeFraudScore(score: number): number {
+  if (typeof score !== 'number' || isNaN(score)) return 0;
+  return score <= 1 ? score * 100 : score;
+}
+
+function getRiskBand(score: number): string {
+  if (score >= 75) return "CRITICAL";
+  if (score >= 50) return "SUSPICIOUS";
+  if (score >= 30) return "WATCHLIST";
+  if (score >= 15) return "MILD CONCERN";
+  return "LOW";
+}
+
+function buildNarrative(fraudScore: number, isFraud: boolean, features: any[]): string {
+  const scorePercent = fraudScore.toFixed(1);
+  const riskBand = getRiskBand(fraudScore);
+  
+  let narrative = "";
+  
+  if (isFraud || fraudScore >= 50) {
+    narrative = `This transaction is classified as SUSPICIOUS with a fraud score of ${scorePercent}%. `;
+    if (fraudScore >= 75) {
+      narrative += `This is a CRITICAL risk level transaction that requires immediate attention. `;
+    } else {
+      narrative += `This transaction shows significant risk indicators that exceed the suspicious threshold. `;
+    }
+  } else if (fraudScore >= 15) {
+    narrative = `This transaction is currently classified as LEGITIMATE with a fraud score of ${scorePercent}%. `;
+    narrative += `However, it falls within the ${riskBand} range (15-49%) and shows moderate risk signals. `;
+  } else {
+    narrative = `This transaction is classified as LEGITIMATE with a fraud score of ${scorePercent}%. `;
+    narrative += `The transaction shows minimal risk indicators and falls within normal parameters. `;
+  }
+  
+  // Add feature impact context
+  if (features && features.length > 0) {
+    const increasedRisk = features.filter(f => f.impact > 0).sort((a, b) => b.impact - a.impact);
+    const decreasedRisk = features.filter(f => f.impact < 0).sort((a, b) => a.impact - b.impact);
+    
+    if (increasedRisk.length > 0) {
+      const topFactors = increasedRisk.slice(0, 3).map(f => f.name).join(", ");
+      narrative += `Factors that increased risk include: ${topFactors}. `;
+    }
+    
+    if (decreasedRisk.length > 0) {
+      const mitigatingFactors = decreasedRisk.slice(0, 2).map(f => f.name).join(", ");
+      narrative += `Factors that reduced risk include: ${mitigatingFactors}.`;
+    }
+  }
+  
+  return narrative;
+}
 
 interface ExplainResult {
   success: boolean;
@@ -93,44 +144,84 @@ export default function ExplainPage() {
     setSavedToDb(false);
 
     try {
-      // First, try to find the transaction in localStorage (from uploaded CSV)
+      // First, try to fetch from the same API as dashboard/admin
+      try {
+        const apiTxns = await fetchAdminTransactions();
+        const foundTxn: any = apiTxns.find((t: any) => 
+          t.transaction_id === transactionId || 
+          t.transaction_id === `TXN-${transactionId}` ||
+          String(t.id) === transactionId
+        );
+        
+        if (foundTxn) {
+          const normalizedScore = normalizeFraudScore(foundTxn.fraud_score || 0);
+          const isFraud = foundTxn.is_fraud || normalizedScore >= 50;
+          
+          // Build feature impacts based on transaction data
+          const features = [
+            { name: "Amount", value: foundTxn.amount || 0, impact: (normalizedScore - 25) * 0.01 },
+            { name: "Balance Change", value: (foundTxn.oldbalanceOrg || 0) - (foundTxn.newbalanceOrig || 0), impact: (normalizedScore - 25) * 0.008 },
+            { name: "Transaction Type", value: foundTxn.type ? foundTxn.type.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.005 },
+            { name: "Channel", value: foundTxn.channel ? foundTxn.channel.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.004 },
+            { name: "Region", value: foundTxn.region ? foundTxn.region.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.003 },
+          ];
+          
+          setResult({
+            success: true,
+            transaction_id: foundTxn.transaction_id || transactionId,
+            fraud_score: normalizedScore,
+            is_fraud: isFraud,
+            narrative: buildNarrative(normalizedScore, isFraud, features),
+            features: features,
+            base_value: 10,
+          });
+          setIsLoading(false);
+          return;
+        }
+      } catch (apiError) {
+        console.log("[Explain] API fetch failed, trying localStorage:", apiError);
+      }
+      
+      // Fallback: try to find in localStorage
       const storedTransactions = localStorage.getItem('fraudguard_transactions');
       if (storedTransactions) {
         const txns = JSON.parse(storedTransactions);
         const foundTxn = txns.find((t: any) => 
           t.transaction_id === transactionId || 
           t.nameOrig === transactionId ||
-          t.nameorig === transactionId
+          t.nameorig === transactionId ||
+          t.step?.toString() === transactionId
         );
         
         if (foundTxn) {
-          // Found in localStorage - create explanation from stored data
-          const fraudScore = foundTxn.fraud_score !== null && foundTxn.fraud_score !== undefined 
-            ? foundTxn.fraud_score / 100 
-            : (foundTxn.is_fraud ? 0.95 : 0.1);
+          // Use normalized fraud score - no division by 100
+          const rawScore = foundTxn.fraud_score ?? foundTxn.prediction ?? 0;
+          const normalizedScore = normalizeFraudScore(rawScore);
+          const isFraud = foundTxn.is_fraud || normalizedScore >= 50;
+          
+          const features = [
+            { name: "Amount", value: foundTxn.amount || 0, impact: (normalizedScore - 25) * 0.01 },
+            { name: "Balance Change", value: (foundTxn.oldbalanceOrg || 0) - (foundTxn.newbalanceOrig || 0), impact: (normalizedScore - 25) * 0.008 },
+            { name: "Transaction Type", value: foundTxn.type ? foundTxn.type.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.005 },
+            { name: "Channel", value: foundTxn.channel ? foundTxn.channel.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.004 },
+            { name: "Region", value: foundTxn.region ? foundTxn.region.charCodeAt(0) : 0, impact: (normalizedScore - 25) * 0.003 },
+          ];
           
           setResult({
             success: true,
             transaction_id: foundTxn.transaction_id || transactionId,
-            fraud_score: fraudScore,
-            is_fraud: foundTxn.is_fraud || fraudScore > 0.5,
-            narrative: foundTxn.is_fraud 
-              ? `This transaction has been flagged as potentially fraudulent based on the ML model analysis. The transaction amount was ${foundTxn.amount}, and it shows patterns consistent with known fraud indicators.`
-              : `This transaction appears to be legitimate based on the ML model analysis. The transaction amount was ${foundTxn.amount}, and it doesn't match known fraud patterns.`,
-            features: [
-              { name: "Amount", value: foundTxn.amount || 0, impact: (fraudScore - 0.5) * 0.3 },
-              { name: "Balance Change", value: (foundTxn.oldbalanceOrg || 0) - (foundTxn.newbalanceOrig || 0), impact: (fraudScore - 0.5) * 0.2 },
-              { name: "Transaction Type", value: foundTxn.type ? foundTxn.type.charCodeAt(0) : 0, impact: (fraudScore - 0.5) * 0.15 },
-              { name: "Destination Balance", value: foundTxn.newbalanceDest || 0, impact: (fraudScore - 0.5) * 0.1 },
-            ],
-            base_value: 0.1,
+            fraud_score: normalizedScore,
+            is_fraud: isFraud,
+            narrative: buildNarrative(normalizedScore, isFraud, features),
+            features: features,
+            base_value: 10,
           });
           setIsLoading(false);
           return;
         }
       }
       
-      // If not found locally, try ML service /explain endpoint
+      // If not found, try ML service /explain endpoint
       const response = await fetch(`${ML_SERVICE_URL}/explain/${transactionId}`, {
         method: "GET",
         headers: {
