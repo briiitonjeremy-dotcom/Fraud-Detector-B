@@ -7,6 +7,7 @@ import { isAdmin, logout } from "@/lib/api";
 const ML_SERVICE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
 
 interface RawTransaction {
+  transaction_id?: string;
   step?: number;
   type?: string;
   amount?: number;
@@ -69,6 +70,7 @@ const defaultStats = {
 function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const rawAny = raw as any;
   
+  const transactionId = rawAny.transaction_id ?? rawAny.transactionId ?? rawAny.Transaction_ID ?? "";
   const step = rawAny.step ?? rawAny.Step ?? 0;
   const amount = rawAny.amount ?? rawAny.Amount ?? rawAny.AMOUNT ?? 0;
   const type = rawAny.type ?? rawAny.Type ?? rawAny.transaction_type ?? "";
@@ -84,11 +86,11 @@ function normalizeTransaction(raw: RawTransaction): NormalizedTransaction {
   const newbalanceDest = rawAny.newbalanceDest ?? rawAny.new_balance_dest ?? rawAny.recipient_new_balance ?? 0;
   const deviceId = rawAny.device_id ?? rawAny.DeviceId ?? rawAny.device ?? "";
   const fraudScoreRaw = rawAny.fraud_score ?? rawAny.fraudScore ?? rawAny.Fraud_Score ?? rawAny.prediction ?? rawAny.Prediction ?? rawAny.score ?? 0;
-  const isFraud = rawAny.is_fraud ?? rawAny.isFraud ?? rawAny.Is_Fraud ?? rawAny.is_fraudulent ?? (fraudScoreRaw >= 50);
+  const isFraud = rawAny.is_fraud ?? rawAny.isFraud ?? rawAny.Is_Fraud ?? rawAny.is_fraudulent ?? (typeof fraudScoreRaw === 'number' ? fraudScoreRaw >= 50 : false);
   const fraudScore = typeof fraudScoreRaw === 'number' ? fraudScoreRaw : (fraudScoreRaw ? fraudScoreRaw * 100 : 0);
   
   return {
-    id: step > 0 ? `TXN-${step}` : (nameOrig ? `TXN-${nameOrig.substring(0, 8)}` : `TXN-${Date.now()}`),
+    id: transactionId || (step > 0 ? `TXN-${step}` : (nameOrig ? `TXN-${nameOrig.substring(0, 8)}` : `TXN-${Date.now()}`)),
     step: step,
     type: type,
     amount: amount,
@@ -130,7 +132,12 @@ export default function Dashboard() {
   });
 
   const transactions: NormalizedTransaction[] = useMemo(() => {
-    return rawTransactions.map(normalizeTransaction);
+    const normalized = rawTransactions.map(normalizeTransaction);
+    console.log("[Dashboard] Normalized transactions count:", normalized.length);
+    if (normalized.length > 0) {
+      console.log("[Dashboard] Normalized sample:", normalized[0]);
+    }
+    return normalized;
   }, [rawTransactions]);
 
   const suspiciousTransactions = useMemo(() => {
@@ -403,13 +410,18 @@ export default function Dashboard() {
         }
         
         const storedTransactions = localStorage.getItem('fraudguard_transactions');
+        console.log("[Dashboard] localStorage fraudguard_transactions:", storedTransactions ? "exists" : "NOT FOUND");
         if (storedTransactions && mounted) {
           const txns: RawTransaction[] = JSON.parse(storedTransactions);
-          console.log("[Dashboard] Raw transactions from localStorage:", txns[0]);
+          console.log("[Dashboard] Raw transactions count:", txns.length);
+          console.log("[Dashboard] Raw transaction sample:", txns[0]);
           if (txns.length > 0) {
             setRawTransactions(txns);
             setHasRealData(true);
+            console.log("[Dashboard] Set rawTransactions and hasRealData=true");
           }
+        } else {
+          console.log("[Dashboard] No transactions in localStorage");
         }
         
         const savedFraudCasesData = localStorage.getItem('fraudguard_fraud_cases');
