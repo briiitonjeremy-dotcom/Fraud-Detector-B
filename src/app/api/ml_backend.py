@@ -877,6 +877,395 @@ def admin_get_logs():
     return jsonify({'logs': logs})
 
 
+# ============== ANALYST AI ASSISTANT ENDPOINTS ==============
+
+CASES_DB = []
+CASE_REVIEWS = []
+CASE_ID_COUNTER = 1
+
+def generate_case_id():
+    global CASE_ID_COUNTER
+    case_id = f"FG-2026-{CASE_ID_COUNTER:05d}"
+    CASE_ID_COUNTER += 1
+    return case_id
+
+
+@app.route('/analyst/cases', methods=['GET'])
+@require_auth
+def get_flagged_cases():
+    """
+    Get all flagged cases for analyst review.
+    """
+    cases = [c for c in CASES_DB if c.get('status') != 'resolved']
+    return jsonify({'cases': cases})
+
+
+@app.route('/analyst/cases/<case_id>', methods=['GET'])
+@require_auth
+def get_case_details(case_id):
+    """
+    Get detailed case information including AI summary and evidence.
+    """
+    case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
+    
+    if not case:
+        return jsonify({'error': 'Case not found'}), 404
+    
+    return jsonify({'case': case})
+
+
+@app.route('/analyst/cases', methods=['POST'])
+@require_auth
+def create_case():
+    """
+    Create a new case from a transaction for AI analysis.
+    """
+    global CASES_DB
+    
+    data = request.get_json()
+    transaction_id = data.get('transaction_id')
+    transaction_data = data.get('transaction', {})
+    
+    if not transaction_id:
+        return jsonify({'error': 'Transaction ID required'}), 400
+    
+    case_id = generate_case_id()
+    
+    fraud_score = transaction_data.get('fraud_score', 0)
+    risk_level = "HIGH" if fraud_score >= 70 else "SUSPICIOUS" if fraud_score >= 50 else "MEDIUM" if fraud_score >= 30 else "LOW"
+    
+    case_type = "suspicious_transaction"
+    if fraud_score >= 70:
+        case_type = "criminal_fraud"
+    elif "new device" in str(transaction_data).lower() or "failed otp" in str(transaction_data).lower():
+        case_type = "account_takeover"
+    
+    reasons = []
+    if fraud_score >= 50:
+        reasons.append(f"High fraud model score ({fraud_score:.1f}%)")
+    if transaction_data.get('amount', 0) > 50000:
+        reasons.append("Transaction amount significantly above customer baseline")
+    if transaction_data.get('channel') == 'M-PESA':
+        reasons.append("M-PESA/Bank transfer channel flagged")
+    if not transaction_data.get('channel'):
+        reasons.append("No transaction channel information")
+    
+    recommended_authorities = []
+    if fraud_score >= 70:
+        recommended_authorities.append("DCI")
+    if fraud_score >= 50:
+        recommended_authorities.append("FRC")
+    if not recommended_authorities:
+        recommended_authorities.append("Internal Review Only")
+    
+    case = {
+        'case_id': case_id,
+        'transaction_id': transaction_id,
+        'customer_reference': transaction_data.get('nameOrig', transaction_data.get('sender', 'Unknown')),
+        'risk_score': fraud_score,
+        'risk_level': risk_level,
+        'case_type': case_type,
+        'status': 'pending_review',
+        'recommended_authorities': recommended_authorities,
+        'human_review_required': True,
+        'created_at': datetime.now().isoformat(),
+        'last_action': 'Case created - awaiting analyst review',
+        'confidence_note': 'AI-generated draft based on available evidence; analyst confirmation required before any external submission.',
+        
+        'summary': f"This transaction was flagged as {risk_level} risk with a fraud score of {fraud_score:.1f}%. "
+                   f"The system detected indicators consistent with possible fraud. "
+                   f"Human review is required before any external reporting.",
+        
+        'reasons': reasons,
+        
+        'evidence': [
+            {'type': 'model_score', 'label': 'Fraud Model Score', 'value': f"{fraud_score:.1f}%"},
+            {'type': 'amount', 'label': 'Transaction Amount', 'value': f"KES {transaction_data.get('amount', 0):,.0f}"},
+            {'type': 'channel', 'label': 'Channel', 'value': transaction_data.get('channel', 'Unknown')},
+            {'type': 'transaction_type', 'label': 'Transaction Type', 'value': transaction_data.get('type', 'Unknown')},
+            {'type': 'sender', 'label': 'Sender Account', 'value': transaction_data.get('nameOrig', 'Unknown')},
+            {'type': 'recipient', 'label': 'Recipient Account', 'value': transaction_data.get('nameDest', 'Unknown')},
+        ],
+        
+        'timeline': [
+            {'timestamp': datetime.now().isoformat(), 'event': 'transaction_flagged', 'description': 'Transaction flagged by fraud model'},
+            {'timestamp': datetime.now().isoformat(), 'event': 'case_created', 'description': 'Case created for analyst review'},
+        ],
+        
+        'narrative_report': f"""CASE SUMMARY REPORT
+============================
+Case ID: {case_id}
+Transaction ID: {transaction_id}
+Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+RISK ASSESSMENT
+---------------
+Risk Score: {fraud_score:.1f}%
+Risk Level: {risk_level}
+Case Type: {case_type}
+
+SUMMARY
+-------
+This transaction was flagged as {risk_level} risk. The fraud model detected patterns that warrant analyst investigation. 
+Key indicators include: {', '.join(reasons) if reasons else 'Standard fraud model alert'}.
+
+RECOMMENDATION
+--------------
+This case is recommended for analyst review. {"External reporting to " + ", ".join(recommended_authorities) + " should only occur after analyst and compliance approval." if recommended_authorities != ["Internal Review Only"] else "Case appears suitable for internal review only."}
+
+CONFIDENTIALITY NOTICE
+----------------------
+This is an AI-assisted draft. All findings must be verified by qualified analyst personnel before external submission.
+""",
+        
+        'structured_report': {
+            'case_id': case_id,
+            'transaction_id': transaction_id,
+            'report_type': case_type,
+            'risk_score': fraud_score,
+            'risk_level': risk_level,
+            'report_to': recommended_authorities,
+            'analyst_verification_required': True,
+        },
+        
+        'audit': {
+            'model_version': 'v3.2.1',
+            'prompt_version': 'fraud-report-prompt-v2',
+            'report_timestamp': datetime.now().isoformat(),
+            'reviewer_decision': '',
+            'reviewer_notes': '',
+            'review_timestamp': '',
+        },
+    }
+    
+    CASES_DB.append(case)
+    log_admin_action('create_case', g.current_user.get('email'), case_id, f'Created case for transaction {transaction_id}')
+    
+    return jsonify({'case': case, 'success': True})
+
+
+@app.route('/analyst/chat', methods=['POST'])
+@require_auth
+def analyst_chat():
+    """
+    Analyst copilot chat - ask questions about a specific case.
+    """
+    data = request.get_json()
+    case_id = data.get('case_id')
+    question = data.get('question')
+    
+    if not case_id or not question:
+        return jsonify({'error': 'Case ID and question required'}), 400
+    
+    case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
+    
+    if not case:
+        return jsonify({'error': 'Case not found'}), 404
+    
+    risk_score = case.get('risk_score', 0)
+    risk_level = case.get('risk_level', 'UNKNOWN')
+    reasons = case.get('reasons', [])
+    evidence = case.get('evidence', [])
+    
+    response = generate_analyst_response(question, case)
+    
+    return jsonify({
+        'case_id': case_id,
+        'question': question,
+        'response': response,
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+def generate_analyst_response(question: str, case: dict) -> str:
+    """Generate professional analyst-focused responses."""
+    question_lower = question.lower()
+    risk_score = case.get('risk_score', 0)
+    risk_level = case.get('risk_level', 'UNKNOWN')
+    reasons = case.get('reasons', [])
+    evidence = case.get('evidence', [])
+    recommended_authorities = case.get('recommended_authorities', [])
+    
+    if 'dci' in question_lower and 'route' in question_lower:
+        return f"""Authority Routing Analysis:
+        
+The case is recommended for DCI (Directorate of Criminal Investigations) because:
+- High risk score ({risk_score:.1f}%) indicates serious fraud indicators
+- Transaction patterns suggest possible cyber-enabled fraud
+- Amount and channel characteristics are consistent with electronic fraud
+
+DCI routing is appropriate when there is evidence of criminal activity that may require criminal investigation powers."""
+    
+    if 'frc' in question_lower and 'route' in question_lower:
+        return f"""Authority Routing Analysis:
+        
+The case is recommended for FRC (Financial Reporting Centre) because:
+- Suspicious transaction monitoring flagged this case
+- Transaction patterns align with AML-style suspicious activity
+- Financial channel indicators warrant FIU attention
+
+FRC routing is appropriate for suspicious transaction reports as required by AML regulations."""
+    
+    if 'evidence' in question_lower and 'strongest' in question_lower:
+        evidence_str = "\n".join([f"- {e.get('label')}: {e.get('value')}" for e in evidence[:5]])
+        return f"""Strongest Evidence:
+        
+{evidence_str}
+
+The fraud model score is the primary indicator. Additional supporting evidence includes transaction channel, amount, and account information."""
+    
+    if 'evidence' in question_lower and 'missing' in question_lower:
+        return f"""Potentially Missing Evidence:
+        
+- Device metadata (device ID, browser fingerprint)
+- IP address geolocation data
+- Login attempt history
+- OTP attempt logs
+- Account age and history
+- Previous transaction patterns for this customer
+
+Analyst should request additional evidence from IT/security team before final determination."""
+    
+    if 'account takeover' in question_lower or 'ato' in question_lower:
+        return f"""Account Takeover Analysis:
+        
+The available indicators {'are consistent with' if risk_score >= 50 else 'partially suggest'} possible account takeover:
+- {'High fraud score suggests credential compromise' if risk_score >= 50 else 'Moderate score - investigation needed'}
+- Evidence suggests investigation into authentication events
+- Recommend checking login history and device fingerprints
+
+This assessment is based on available data. Analyst should verify with authentication logs."""
+    
+    if 'confidence' in question_lower or 'reliable' in question_lower:
+        return f"""Confidence Assessment:
+        
+Current confidence level: {'HIGH' if risk_score >= 70 else 'MEDIUM' if risk_score >= 40 else 'LOW'}
+
+This assessment is based on:
+- Model score reliability
+- Available evidence completeness
+- Rule trigger confidence
+
+Analyst judgment is required for final determination."""
+    
+    if 'action' in question_lower or 'next' in question_lower:
+        return f"""Recommended Next Actions:
+        
+1. Review all available evidence in the Evidence Viewer
+2. Check timeline for authentication anomalies
+3. Verify customer recent activity patterns
+4. Document analyst observations
+5. Make human review decision (Approve/Reject/Escalate)
+
+External reporting should only proceed after analyst approval."""
+    
+    if 'structur' in question_lower or 'smurf' in question_lower:
+        return f"""Structuring/Smurfing Analysis:
+        
+Available data does not show clear structuring patterns. 
+To assess structuring:
+- Review multiple transactions from same source
+- Check for just-below-threshold amounts
+- Verify frequency patterns
+
+Recommend detailed transaction history analysis."""
+    
+    if 'internal' in question_lower and 'review' in question_lower:
+        return f"""Internal Review Assessment:
+        
+This case is suitable for internal review because:
+- {'Evidence is insufficient for external escalation' if risk_score < 50 else 'Evidence supports escalation but analyst verification needed'}
+- Standard monitoring case
+- No clear criminal activity indicators
+
+Analyst should document decision rationale."""
+    
+    return f"""Analyst Guidance:
+
+This case has a risk score of {risk_score:.1f}% ({risk_level}).
+Primary reasons for flagging:
+{chr(10).join([f"- {r}" for r in reasons[:3]]) if reasons else "- Standard fraud model alert"}
+
+For specific questions about this case, please ask about:
+- Why it was routed to a specific authority
+- What evidence is strongest or missing
+- Whether it resembles known fraud patterns
+- What action to take next
+- Confidence level of the assessment"""
+
+
+@app.route('/analyst/review', methods=['POST'])
+@require_auth
+def submit_case_review():
+    """
+    Submit human review decision for a case.
+    """
+    global CASES_DB, CASE_REVIEWS
+    
+    data = request.get_json()
+    case_id = data.get('case_id')
+    decision = data.get('decision')  # approve, reject, escalate, hold_internal, request_evidence
+    reviewer_notes = data.get('reviewer_notes', '')
+    
+    if not case_id or not decision:
+        return jsonify({'error': 'Case ID and decision required'}), 400
+    
+    case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
+    
+    if not case:
+        return jsonify({'error': 'Case not found'}), 404
+    
+    valid_decisions = ['approve', 'reject', 'escalate', 'hold_internal', 'request_evidence', 'mark_reviewed']
+    if decision not in valid_decisions:
+        return jsonify({'error': f'Invalid decision. Must be one of: {valid_decisions}'}), 400
+    
+    reviewer_name = g.current_user.get('name', g.current_user.get('email', 'Unknown'))
+    
+    review = {
+        'case_id': case_id,
+        'decision': decision,
+        'reviewer_name': reviewer_name,
+        'reviewer_notes': reviewer_notes,
+        'review_timestamp': datetime.now().isoformat(),
+    }
+    
+    CASE_REVIEWS.append(review)
+    
+    case['status'] = 'reviewed' if decision == 'mark_reviewed' else 'escalated' if decision == 'escalate' else case['status']
+    case['last_action'] = f'Reviewed by {reviewer_name}: {decision}'
+    case['audit']['reviewer_decision'] = decision
+    case['audit']['reviewer_notes'] = reviewer_notes
+    case['audit']['review_timestamp'] = datetime.now().isoformat()
+    
+    status_messages = {
+        'approve': f'Case approved for external reporting by {reviewer_name}',
+        'reject': f'Case rejected by {reviewer_name}. No further action.',
+        'escalate': f'Case escalated by {reviewer_name}. Awaiting compliance approval.',
+        'hold_internal': f'Case held for internal review only by {reviewer_name}',
+        'request_evidence': f'Additional evidence requested by {reviewer_name}',
+        'mark_reviewed': f'Case marked as reviewed by {reviewer_name}',
+    }
+    
+    log_admin_action('case_review', g.current_user.get('email'), case_id, status_messages.get(decision, f'Decision: {decision}'))
+    
+    return jsonify({
+        'success': True,
+        'review': review,
+        'message': status_messages.get(decision),
+        'case': case
+    })
+
+
+@app.route('/analyst/reviews/<case_id>', methods=['GET'])
+@require_auth
+def get_case_reviews(case_id):
+    """
+    Get review history for a case.
+    """
+    reviews = [r for r in CASE_REVIEWS if r.get('case_id') == case_id]
+    return jsonify({'reviews': reviews})
+
+
 # ============== MAIN ==============
 
 # Load model when app starts

@@ -340,6 +340,66 @@ export interface AdminStats {
   flagged_transactions: number;
 }
 
+// ============== ANALYST ASSISTANT TYPES ==============
+
+export interface AnalystCase {
+  case_id: string;
+  transaction_id: string;
+  customer_reference: string;
+  risk_score: number;
+  risk_level: string;
+  case_type: string;
+  status: string;
+  recommended_authorities: string[];
+  human_review_required: boolean;
+  created_at: string;
+  last_action: string;
+  confidence_note: string;
+  summary: string;
+  reasons: string[];
+  evidence: EvidenceItem[];
+  timeline: TimelineEvent[];
+  narrative_report: string;
+  structured_report: Record<string, any>;
+  audit: CaseAudit;
+}
+
+export interface EvidenceItem {
+  type: string;
+  label: string;
+  value: string;
+}
+
+export interface TimelineEvent {
+  timestamp: string;
+  event: string;
+  description: string;
+}
+
+export interface CaseAudit {
+  model_version: string;
+  prompt_version: string;
+  report_timestamp: string;
+  reviewer_decision: string;
+  reviewer_notes: string;
+  review_timestamp: string;
+}
+
+export interface CaseReview {
+  case_id: string;
+  decision: string;
+  reviewer_name: string;
+  reviewer_notes: string;
+  review_timestamp: string;
+}
+
+export interface AnalystChatMessage {
+  case_id: string;
+  question: string;
+  response: string;
+  timestamp: string;
+}
+
 // Safe fetch helper - returns null on error instead of throwing
 export async function safeFetch<T>(
   url: string,
@@ -580,4 +640,122 @@ export function logout(): void {
  */
 export function requireAdmin(): boolean {
   return isAdmin();
+}
+
+// ============== ANALYST ASSISTANT API FUNCTIONS ==============
+
+export async function fetchAnalystCases(): Promise<AnalystCase[]> {
+  const data = await safeFetch<{ cases: AnalystCase[] }>(
+    `${API_BASE_URL}/analyst/cases`
+  );
+  return data?.cases || [];
+}
+
+export async function fetchAnalystCase(caseId: string): Promise<AnalystCase | null> {
+  const data = await safeFetch<{ case: AnalystCase }>(
+    `${API_BASE_URL}/analyst/cases/${caseId}`
+  );
+  return data?.case || null;
+}
+
+export async function createAnalystCase(
+  transactionId: string,
+  transactionData: Record<string, any>
+): Promise<{ success: boolean; case?: AnalystCase; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        transaction: transactionData,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { success: false, error: error.error || "Failed to create case" };
+    }
+
+    const data = await response.json();
+    return { success: true, case: data.case };
+  } catch (error) {
+    console.error("[API] Error creating analyst case:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+export async function askAnalystChat(
+  caseId: string,
+  question: string
+): Promise<{ success: boolean; response?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({
+        case_id: caseId,
+        question: question,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { success: false, error: error.error || "Failed to get response" };
+    }
+
+    const data = await response.json();
+    return { success: true, response: data.response };
+  } catch (error) {
+    console.error("[API] Error in analyst chat:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+export async function submitCaseReview(
+  caseId: string,
+  decision: string,
+  reviewerNotes: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/review`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({
+        case_id: caseId,
+        decision: decision,
+        reviewer_notes: reviewerNotes,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { success: false, error: error.error || "Failed to submit review" };
+    }
+
+    const data = await response.json();
+    return { success: true, message: data.message };
+  } catch (error) {
+    console.error("[API] Error submitting case review:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+export async function fetchCaseReviews(caseId: string): Promise<CaseReview[]> {
+  const data = await safeFetch<{ reviews: CaseReview[] }>(
+    `${API_BASE_URL}/analyst/reviews/${caseId}`
+  );
+  return data?.reviews || [];
 }
