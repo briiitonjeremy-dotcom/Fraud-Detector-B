@@ -90,6 +90,7 @@ export default function ExplainPage() {
     { href: "/", icon: "📊", label: "Dashboard", active: false },
     { href: "/upload", icon: "📤", label: "Upload Dataset", active: false },
     { href: "/explain", icon: "🔍", label: "Explain", active: true },
+    { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
     { href: "/api-test", icon: "🧪", label: "API Test", active: false },
     { href: "/admin", icon: "⚙", label: "Admin", active: false },
     // Show Login or Logout based on auth status

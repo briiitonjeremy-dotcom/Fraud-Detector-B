@@ -428,7 +428,8 @@ export default function Dashboard() {
   const navItems = [
     { href: "/", icon: "⬡", label: "Dashboard", active: true },
     { href: "/upload", icon: "⇪", label: "Upload Dataset", active: false },
-    { href: "/explain", icon: "�ichter", label: "Explain", active: false },
+    { href: "/explain", icon: "🔍", label: "Explain", active: false },
+    { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
     { href: "/api-test", icon: "⚡", label: "API Test", active: false },
     { href: "/admin", icon: "⚙", label: "Admin", active: false },
     loggedIn 

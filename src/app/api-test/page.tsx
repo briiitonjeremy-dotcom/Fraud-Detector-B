@@ -87,6 +87,7 @@ export default function ApiTestPage() {
     { href: "/", icon: "⬡", label: "Dashboard", active: false },
     { href: "/upload", icon: "⇪", label: "Upload Dataset", active: false },
     { href: "/explain", icon: "⟁", label: "Explain", active: false },
+    { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
     { href: "/api-test", icon: "⚡", label: "API Test", active: true },
     { href: "/admin", icon: "⚙", label: "Admin", active: false },
     // Show Login or Logout based on auth status
@@ -616,5 +617,6 @@ const navItems = [
   { href: "/", icon: "⬡", label: "Dashboard", active: false },
   { href: "/upload", icon: "⇪", label: "Upload Dataset", active: false },
   { href: "/explain", icon: "⟁", label: "Explain", active: false },
+  { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
   { href: "/api-test", icon: "⚡", label: "API Test", active: true },
 ];

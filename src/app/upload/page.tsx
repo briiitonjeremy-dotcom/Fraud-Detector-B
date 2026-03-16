@@ -10,6 +10,7 @@ const navItems = [
   { href: "/", icon: "📊", label: "Dashboard", active: false },
   { href: "/upload", icon: "📤", label: "Upload Dataset", active: true },
   { href: "/explain", icon: "🔍", label: "Explain", active: false },
+  { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
   { href: "/api-test", icon: "🧪", label: "API Test", active: false },
 ];
 
@@ -47,6 +48,7 @@ export default function UploadPage() {
     { href: "/", icon: "📊", label: "Dashboard", active: false },
     { href: "/upload", icon: "📤", label: "Upload Dataset", active: true },
     { href: "/explain", icon: "🔍", label: "Explain", active: false },
+    { href: "/analyst", icon: "🤖", label: "Analyst AI", active: false },
     { href: "/api-test", icon: "🧪", label: "API Test", active: false },
     { href: "/admin", icon: "⚙", label: "Admin", active: false },
     // Show Login or Logout based on auth status
