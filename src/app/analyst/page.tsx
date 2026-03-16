@@ -503,14 +503,17 @@ export default function AnalystPage() {
     submitting: false,
     message: "",
   });
-  const [userRole] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return isAdmin() ? "admin" : getUserRole() || null;
-  });
-  const [loggedIn] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return isLoggedIn();
-  });
+  // These must start as null/false on both server and client to avoid
+  // React hydration mismatch (error #418). useEffect sets them client-side.
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [loggedIn, setLoggedIn] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Read localStorage only on client after hydration to prevent error #418.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoggedIn(isLoggedIn());
+    setUserRole(isAdmin() ? "admin" : getUserRole() || null);
+  }, []);
 
   const loadCases = async () => {
     setIsLoading(true);
