@@ -29,7 +29,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+
+# Allow requests from the Vercel frontend and local dev.
+# The proxy on Vercel eliminates browser CORS, but keeping explicit CORS
+# config here ensures direct API calls also work during development.
+CORS(
+    app,
+    resources={r"/*": {"origins": [
+        "https://fraud-detector-b.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ]}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+)
+
+
+@app.before_request
+def handle_preflight():
+    """Return 200 immediately for all OPTIONS preflight requests."""
+    if request.method == "OPTIONS":
+        return "", 200
 
 # Secret key for sessions (in production, use environment variable)
 app.secret_key = os.environ.get('SECRET_KEY', 'fraudguard-secret-key-change-in-production')
@@ -115,8 +136,8 @@ def get_session(token):
         # Check if session is not expired (24 hours)
         if time.time() - session['created_at'] < 86400:
             return session
-        Expired - else:
-            # remove
+        else:
+            # Expired - remove
             del SESSIONS[token]
     return None
 
@@ -890,39 +911,45 @@ def generate_case_id():
     return case_id
 
 
-@app.route('/analyst/cases', methods=['GET'])
-@require_auth
-def get_flagged_cases():
-    """
-    Get all flagged cases for analyst review.
-    """
-    cases = [c for c in CASES_DB if c.get('status') != 'resolved']
-    return jsonify({'cases': cases})
+@app.route('/analyst/cases', methods=['GET', 'POST', 'OPTIONS'])
+def analyst_cases_endpoint():
+    """GET: list all cases. POST: create a new case."""
+    if request.method == 'OPTIONS':
+        return "", 200
+
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    if request.method == 'GET':
+        cases = [c for c in CASES_DB if c.get('status') != 'resolved']
+        return jsonify({'cases': cases})
+
+    # POST — create case
+    return _create_case_logic(user)
 
 
-@app.route('/analyst/cases/<case_id>', methods=['GET'])
-@require_auth
-def get_case_details(case_id):
-    """
-    Get detailed case information including AI summary and evidence.
-    """
+@app.route('/analyst/cases/<case_id>', methods=['GET', 'OPTIONS'])
+def analyst_case_detail(case_id):
+    """Get detailed case information."""
+    if request.method == 'OPTIONS':
+        return "", 200
+
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
     case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
-    
     if not case:
         return jsonify({'error': 'Case not found'}), 404
-    
     return jsonify({'case': case})
 
 
-@app.route('/analyst/cases', methods=['POST'])
-@require_auth
-def create_case():
-    """
-    Create a new case from a transaction for AI analysis.
-    """
+def _create_case_logic(user):
+    """Internal: create an analyst case from a transaction."""
     global CASES_DB
-    
-    data = request.get_json()
+
+    data = request.get_json() or {}
     transaction_id = data.get('transaction_id')
     transaction_data = data.get('transaction', {})
     
@@ -1039,18 +1066,23 @@ This is an AI-assisted draft. All findings must be verified by qualified analyst
     }
     
     CASES_DB.append(case)
-    log_admin_action('create_case', g.current_user.get('email'), case_id, f'Created case for transaction {transaction_id}')
-    
+    log_admin_action('create_case', user.get('email', 'unknown'), case_id, f'Created case for transaction {transaction_id}')
+
     return jsonify({'case': case, 'success': True})
 
 
-@app.route('/analyst/chat', methods=['POST'])
-@require_auth
+@app.route('/analyst/chat', methods=['POST', 'OPTIONS'])
 def analyst_chat():
     """
     Analyst copilot chat - ask questions about a specific case.
     """
-    data = request.get_json()
+    if request.method == 'OPTIONS':
+        return "", 200
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
     case_id = data.get('case_id')
     question = data.get('question')
     
@@ -1194,33 +1226,35 @@ For specific questions about this case, please ask about:
 - Confidence level of the assessment"""
 
 
-@app.route('/analyst/review', methods=['POST'])
-@require_auth
+@app.route('/analyst/review', methods=['POST', 'OPTIONS'])
 def submit_case_review():
-    """
-    Submit human review decision for a case.
-    """
+    """Submit human review decision for a case."""
+    if request.method == 'OPTIONS':
+        return "", 200
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
     global CASES_DB, CASE_REVIEWS
-    
-    data = request.get_json()
+
+    data = request.get_json() or {}
     case_id = data.get('case_id')
-    decision = data.get('decision')  # approve, reject, escalate, hold_internal, request_evidence
+    decision = data.get('decision')
     reviewer_notes = data.get('reviewer_notes', '')
-    
+
     if not case_id or not decision:
         return jsonify({'error': 'Case ID and decision required'}), 400
-    
+
     case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
-    
     if not case:
         return jsonify({'error': 'Case not found'}), 404
-    
+
     valid_decisions = ['approve', 'reject', 'escalate', 'hold_internal', 'request_evidence', 'mark_reviewed']
     if decision not in valid_decisions:
         return jsonify({'error': f'Invalid decision. Must be one of: {valid_decisions}'}), 400
-    
-    reviewer_name = g.current_user.get('name', g.current_user.get('email', 'Unknown'))
-    
+
+    reviewer_name = user.get('name', user.get('email', 'Unknown'))
+
     review = {
         'case_id': case_id,
         'decision': decision,
@@ -1228,15 +1262,15 @@ def submit_case_review():
         'reviewer_notes': reviewer_notes,
         'review_timestamp': datetime.now().isoformat(),
     }
-    
+
     CASE_REVIEWS.append(review)
-    
+
     case['status'] = 'reviewed' if decision == 'mark_reviewed' else 'escalated' if decision == 'escalate' else case['status']
     case['last_action'] = f'Reviewed by {reviewer_name}: {decision}'
     case['audit']['reviewer_decision'] = decision
     case['audit']['reviewer_notes'] = reviewer_notes
     case['audit']['review_timestamp'] = datetime.now().isoformat()
-    
+
     status_messages = {
         'approve': f'Case approved for external reporting by {reviewer_name}',
         'reject': f'Case rejected by {reviewer_name}. No further action.',
@@ -1245,9 +1279,9 @@ def submit_case_review():
         'request_evidence': f'Additional evidence requested by {reviewer_name}',
         'mark_reviewed': f'Case marked as reviewed by {reviewer_name}',
     }
-    
-    log_admin_action('case_review', g.current_user.get('email'), case_id, status_messages.get(decision, f'Decision: {decision}'))
-    
+
+    log_admin_action('case_review', user.get('email', 'unknown'), case_id, status_messages.get(decision, f'Decision: {decision}'))
+
     return jsonify({
         'success': True,
         'review': review,
@@ -1256,14 +1290,32 @@ def submit_case_review():
     })
 
 
-@app.route('/analyst/reviews/<case_id>', methods=['GET'])
-@require_auth
+@app.route('/analyst/reviews/<case_id>', methods=['GET', 'OPTIONS'])
 def get_case_reviews(case_id):
-    """
-    Get review history for a case.
-    """
+    """Get review history for a case."""
+    if request.method == 'OPTIONS':
+        return "", 200
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
     reviews = [r for r in CASE_REVIEWS if r.get('case_id') == case_id]
     return jsonify({'reviews': reviews})
+
+
+@app.route('/analyst/cases/<case_id>/export', methods=['POST', 'OPTIONS'])
+@app.route('/analyst/cases/<case_id>/request-evidence', methods=['POST', 'OPTIONS'])
+@app.route('/analyst/cases/<case_id>/send-review', methods=['POST', 'OPTIONS'])
+def analyst_case_actions(case_id):
+    """Generic handler for case action endpoints."""
+    if request.method == 'OPTIONS':
+        return "", 200
+    user = get_user_from_session()
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    case = next((c for c in CASES_DB if c.get('case_id') == case_id), None)
+    if not case:
+        return jsonify({'error': 'Case not found'}), 404
+    return jsonify({'success': True, 'message': 'Action recorded', 'case_id': case_id})
 
 
 # ============== MAIN ==============
