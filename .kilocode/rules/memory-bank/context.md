@@ -60,6 +60,12 @@ FraudGuard is a fintech web application for real-time fraud detection. The front
 - [x] Flask model loaded once at startup, not per request
 - [x] Add comprehensive logging to Flask backend (request, CSV parsing, preprocessing, prediction, total time)
 - [x] Flask returns only necessary result fields
+- [x] Build production Analyst AI Assistant — full analyst operations layer
+- [x] Create 9 modular analyst components (CaseOverviewPanel, AISummaryPanel, EvidenceViewer, FraudTimeline, AuthorityRoutingPanel, ReportPreview, AnalystCopilotChat, HumanReviewWorkflow, AuditMetadataCard)
+- [x] Rebuild /analyst page with two-column layout (cases list + case detail with 7 tabs)
+- [x] Extend api.ts with exportCaseReport, requestMoreEvidence, sendCaseForReview
+- [x] Add Analyst AI nav item to Sidebar component
+- [x] All builds pass cleanly (tsc, eslint, next build)
 
 ## Current Structure
 
@@ -83,6 +89,15 @@ FraudGuard is a fintech web application for real-time fraud detection. The front
 | `src/components/dashboard/ActivityFeed.tsx` | Real-time activity timeline | ✅ Complete |
 | `src/components/dashboard/FraudTrendChart.tsx` | 14-day fraud trend bars | ✅ Complete |
 | `src/components/dashboard/SuspiciousTransactionsTable.tsx` | Sortable table with pagination | ✅ Complete |
+| `src/components/analyst/CaseOverviewPanel.tsx` | Case ID, risk level, status, authorities, meta grid, confidence note | ✅ Complete |
+| `src/components/analyst/AISummaryPanel.tsx` | AI narrative, flagging reasons with icons, recommended actions | ✅ Complete |
+| `src/components/analyst/EvidenceViewer.tsx` | Categorized evidence accordions (Transaction/Model/Access/Linked/Audit) | ✅ Complete |
+| `src/components/analyst/FraudTimeline.tsx` | Chronological event timeline with severity colors and timestamps | ✅ Complete |
+| `src/components/analyst/AuthorityRoutingPanel.tsx` | DCI/FRC/ODPC/Internal routing cards with rationale and disclaimer | ✅ Complete |
+| `src/components/analyst/ReportPreview.tsx` | 4-tab report module: Narrative/JSON/Summary/Recommendation + export/copy actions | ✅ Complete |
+| `src/components/analyst/AnalystCopilotChat.tsx` | Case-grounded AI chat with suggested questions, backend-only integration | ✅ Complete |
+| `src/components/analyst/HumanReviewWorkflow.tsx` | 6-decision review controls, notes, review history, mandatory-review notice | ✅ Complete |
+| `src/components/analyst/AuditMetadataCard.tsx` | Compact audit bar: model version, prompt, timestamps, decision, case ID | ✅ Complete |
 
 ## How to Use the Application
 
@@ -136,6 +151,7 @@ The frontend connects to the ML service at:
 | 2026-03-13 | Complete redesign of FraudGuard dashboard with premium fintech components |
 | 2026-03-13 | Created Sidebar, KPIGrid, RiskGauge, SecurityAlerts, ActivityFeed, FraudTrendChart, SuspiciousTransactionsTable components |
 | 2026-03-13 | Integrated all premium components into page.tsx with dark slate theme |
+| 2026-03-16 | Built production Analyst AI Assistant with 9 modular components and full workflow |
 
 ## Latest Dashboard Redesign (2026-03-13)
 

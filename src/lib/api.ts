@@ -759,3 +759,86 @@ export async function fetchCaseReviews(caseId: string): Promise<CaseReview[]> {
   );
   return data?.reviews || [];
 }
+
+export async function exportCaseReport(
+  caseId: string,
+  format: "json" | "pdf" | "txt"
+): Promise<{ success: boolean; url?: string; content?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({ format }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return { success: false, error: error.error || "Failed to export report" };
+    }
+
+    const data = await response.json();
+    return { success: true, url: data.url, content: data.content };
+  } catch (error) {
+    console.error("[API] Error exporting case report:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+export async function requestMoreEvidence(
+  caseId: string,
+  notes: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/request-evidence`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({ notes }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return { success: false, error: error.error || "Failed to request evidence" };
+    }
+
+    const data = await response.json();
+    return { success: true, message: data.message };
+  } catch (error) {
+    console.error("[API] Error requesting evidence:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+export async function sendCaseForReview(
+  caseId: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/send-review`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return { success: false, error: error.error || "Failed to send for review" };
+    }
+
+    const data = await response.json();
+    return { success: true, message: data.message };
+  } catch (error) {
+    console.error("[API] Error sending case for review:", error);
+    return { success: false, error: "Network error" };
+  }
+}
