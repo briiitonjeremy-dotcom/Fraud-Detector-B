@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -33,6 +34,20 @@ const navItems = [
 
 export default function Sidebar({ mlStatus, loggedIn, userRole, onLogout }: SidebarProps) {
   const pathname = usePathname();
+
+  // Read localStorage only on client to avoid hydration mismatch
+  const [isActive, setIsActive] = useState(true);
+  const [userEmail, setUserEmail] = useState("");
+
+  useEffect(() => {
+    setIsActive(localStorage.getItem("isActive") !== "false");
+    try {
+      const u = localStorage.getItem("user");
+      setUserEmail(u ? JSON.parse(u).email || "" : "");
+    } catch {
+      setUserEmail("");
+    }
+  }, [loggedIn]);
 
   const roleColors = {
     admin: { bg: "bg-purple-500/10", border: "border-purple-500/30", text: "text-purple-400" },
@@ -84,13 +99,11 @@ export default function Sidebar({ mlStatus, loggedIn, userRole, onLogout }: Side
             <div className="flex items-center gap-2 mb-2">
               <User className={`w-4 h-4 ${roleStyle.text}`} />
               <span className={`text-sm font-semibold capitalize ${roleStyle.text}`}>{userRole}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${localStorage.getItem("isActive") !== "false" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
-                {localStorage.getItem("isActive") !== "false" ? "ACTIVE" : "INACTIVE"}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${isActive ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                {isActive ? "ACTIVE" : "INACTIVE"}
               </span>
             </div>
-            <p className="text-xs text-slate-500 truncate">
-              {localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user") || "{}").email : ""}
-            </p>
+            <p className="text-xs text-slate-500 truncate">{userEmail}</p>
           </div>
         )}
 
