@@ -219,16 +219,28 @@ export default function UploadPage() {
         // Map predictions to transactions - combine original transaction data with ML predictions
         const processedTransactions = transactions.map((txn: any, index: number) => {
           const pred = predictions[index] || {};
-          
+
+          // fraud_score is the continuous probability (0.0–1.0) returned by the
+          // ML model. prediction is a binary 0/1 flag. Always derive the display
+          // score from fraud_score, normalising to 0–100%.
+          // prediction (0 or 1) must NOT be multiplied by 100 — that produces
+          // only 0% or 100% and loses all nuance from the probability score.
           let fraudScore = 0;
-          if (pred.prediction !== undefined) {
-            const predVal = typeof pred.prediction === 'number' ? pred.prediction : parseFloat(pred.prediction);
-            fraudScore = predVal * 100;
-          } else if (pred.fraud_score !== undefined) {
-            fraudScore = Number(pred.fraud_score);
+          if (pred.fraud_score !== undefined && pred.fraud_score !== null) {
+            const raw = Number(pred.fraud_score);
+            // Backend stores 0–1 probabilities; convert to percentage
+            fraudScore = raw <= 1 ? raw * 100 : raw;
+          } else if (pred.prediction !== undefined) {
+            // Fallback: binary prediction — 1 means flagged, treat as 100%
+            fraudScore = Number(pred.prediction) === 1 ? 100 : 0;
           }
-          
-          const isFraud = pred.is_fraud === true || (typeof fraudScore === 'number' && fraudScore >= 50);
+
+          // A transaction is fraud if the ML binary prediction says so,
+          // OR if the probability score is >= 50%
+          const isFraud =
+            pred.is_fraud === true ||
+            Number(pred.prediction) === 1 ||
+            fraudScore >= 50;
           
           return {
             ...txn,
