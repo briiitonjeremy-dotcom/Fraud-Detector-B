@@ -10,6 +10,7 @@ import {
   fetchAnalystCases,
   fetchAnalystCase,
   createAnalystCase,
+  createOverallAnalysisCase,
   askAnalystChat,
   submitCaseReview,
   fetchAdminTransactions,
@@ -18,6 +19,8 @@ import {
   AnalystCase,
   AnalystChatMessage,
   CaseReview,
+  OverallAnalysisScope,
+  OverallAnalysisFilters,
 } from "@/lib/api";
 
 import CaseOverviewPanel from "@/components/analyst/CaseOverviewPanel";
@@ -29,6 +32,7 @@ import ReportPreview from "@/components/analyst/ReportPreview";
 import AnalystCopilotChat from "@/components/analyst/AnalystCopilotChat";
 import HumanReviewWorkflow from "@/components/analyst/HumanReviewWorkflow";
 import AuditMetadataCard from "@/components/analyst/AuditMetadataCard";
+import CreateCaseModal from "@/components/analyst/CreateCaseModal";
 
 import {
   LayoutDashboard,
@@ -495,7 +499,6 @@ export default function AnalystPage() {
   const [chatMessages, setChatMessages] = useState<AnalystChatMessage[]>([]);
   const [activeTab, setActiveTab] = useState<AnalystTab>("overview");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedTransactionId, setSelectedTransactionId] = useState("");
   const [reviewStatus, setReviewStatus] = useState<{ submitting: boolean; message: string }>({
     submitting: false,
     message: "",
@@ -508,11 +511,6 @@ export default function AnalystPage() {
     if (typeof window === "undefined") return false;
     return isLoggedIn();
   });
-
-  useEffect(() => {
-    loadCases();
-    loadTransactions();
-  }, []);
 
   const loadCases = async () => {
     setIsLoading(true);
@@ -534,6 +532,11 @@ export default function AnalystPage() {
     }
   };
 
+  useEffect(() => {
+    loadCases();
+    loadTransactions();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSelectCase = async (caseId: string) => {
     setIsLoading(true);
     setChatMessages([]);
@@ -551,39 +554,37 @@ export default function AnalystPage() {
     setIsLoading(false);
   };
 
-  const handleCreateCase = async () => {
-    if (!selectedTransactionId) return;
-
+  const handleCreateSingle = async (
+    transactionId: string,
+    txnData: Record<string, unknown>
+  ) => {
     setIsLoading(true);
-    const txn = transactions.find(
-      (t) => t.transaction_id === selectedTransactionId || String(t.id) === selectedTransactionId
-    );
-
-    if (!txn) {
-      alert("Transaction not found");
-      setIsLoading(false);
-      return;
-    }
-
-    const { createAnalystCase } = await import("@/lib/api");
-    const result = await createAnalystCase(selectedTransactionId, {
-      transaction_id: txn.transaction_id,
-      amount: txn.amount,
-      fraud_score: normalizeFraudScore(txn.fraud_score || 0),
-      type: txn.type,
-      channel: txn.channel,
-      nameOrig: txn.nameOrig,
-      nameDest: txn.nameDest,
-    });
-
+    const result = await createAnalystCase(transactionId, txnData);
     if (result.success && result.case) {
-      setCases([...cases, result.case]);
-      setSelectedCase(result.case);
+      setCases((prev) => [result.case!, ...prev]);
+      setSelectedCase(result.case!);
       setShowCreateModal(false);
-      setSelectedTransactionId("");
       setActiveTab("overview");
     } else {
       alert(result.error || "Failed to create case");
+    }
+    setIsLoading(false);
+  };
+
+  const handleCreateOverall = async (
+    scope: OverallAnalysisScope,
+    filters: OverallAnalysisFilters,
+    selectedTransactions: any[]
+  ) => {
+    setIsLoading(true);
+    const result = await createOverallAnalysisCase(scope, filters, selectedTransactions);
+    if (result.success && result.case) {
+      setCases((prev) => [result.case!, ...prev]);
+      setSelectedCase(result.case!);
+      setShowCreateModal(false);
+      setActiveTab("overview");
+    } else {
+      alert(result.error || "Failed to create overall analysis case");
     }
     setIsLoading(false);
   };
@@ -931,132 +932,13 @@ export default function AnalystPage() {
 
       {/* Create Case Modal */}
       {showCreateModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.75)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 200,
-            backdropFilter: "blur(4px)",
-          }}
-          onClick={(e) => e.target === e.currentTarget && setShowCreateModal(false)}
-        >
-          <div
-            className="card"
-            style={{
-              width: "520px",
-              maxWidth: "92vw",
-              padding: "1.5rem",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.625rem",
-                marginBottom: "1.25rem",
-              }}
-            >
-              <Bot style={{ width: "18px", height: "18px", color: "#06b6d4" }} />
-              <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Create New Analyst Case</h3>
-            </div>
-
-            <p
-              style={{
-                fontSize: "0.8125rem",
-                color: "var(--text-muted)",
-                marginBottom: "1.25rem",
-                lineHeight: 1.55,
-              }}
-            >
-              Select a flagged transaction to create an analyst case. The backend AI will generate
-              a case summary, evidence analysis, and reporting recommendation.
-            </p>
-
-            <div style={{ marginBottom: "1.25rem" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  marginBottom: "0.5rem",
-                }}
-              >
-                Select Transaction
-              </label>
-              <select
-                value={selectedTransactionId}
-                onChange={(e) => setSelectedTransactionId(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.75rem 1rem",
-                  background: "rgba(0,0,0,0.3)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "8px",
-                  color: "var(--text-primary)",
-                  fontSize: "0.875rem",
-                  outline: "none",
-                }}
-              >
-                <option value="">Select a transaction to analyze...</option>
-                {transactions.slice(0, 50).map((t) => (
-                  <option key={t.transaction_id} value={t.transaction_id}>
-                    {t.transaction_id} — Score: {normalizeFraudScore(t.fraud_score || 0).toFixed(1)}%
-                    {t.is_fraud ? " ⚠ FLAGGED" : ""}
-                  </option>
-                ))}
-              </select>
-              {transactions.length === 0 && (
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "var(--text-muted)",
-                    marginTop: "0.5rem",
-                  }}
-                >
-                  No transactions loaded. Upload a dataset first or check backend connectivity.
-                </p>
-              )}
-            </div>
-
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setSelectedTransactionId("");
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleCreateCase}
-                disabled={!selectedTransactionId || isLoading}
-                style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}
-              >
-                {isLoading ? (
-                  <RefreshCw
-                    style={{
-                      width: "13px",
-                      height: "13px",
-                      animation: "spin 1s linear infinite",
-                    }}
-                  />
-                ) : (
-                  <Bot style={{ width: "13px", height: "13px" }} />
-                )}
-                {isLoading ? "Creating..." : "Create Case"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CreateCaseModal
+          transactions={transactions}
+          isLoading={isLoading}
+          onCreateSingle={handleCreateSingle}
+          onCreateOverall={handleCreateOverall}
+          onClose={() => setShowCreateModal(false)}
+        />
       )}
     </div>
   );

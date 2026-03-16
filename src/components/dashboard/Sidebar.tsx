@@ -35,19 +35,22 @@ const navItems = [
 export default function Sidebar({ mlStatus, loggedIn, userRole, onLogout }: SidebarProps) {
   const pathname = usePathname();
 
-  // Read localStorage only on client to avoid hydration mismatch
-  const [isActive, setIsActive] = useState(true);
-  const [userEmail, setUserEmail] = useState("");
-
-  useEffect(() => {
-    setIsActive(localStorage.getItem("isActive") !== "false");
+  // Read localStorage only on client to avoid hydration mismatch.
+  // Use lazy useState initialisers so reads happen exactly once on mount
+  // and never inside an effect body (avoids react-hooks/set-state-in-effect).
+  const [isActive] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("isActive") !== "false";
+  });
+  const [userEmail] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
     try {
       const u = localStorage.getItem("user");
-      setUserEmail(u ? JSON.parse(u).email || "" : "");
+      return u ? JSON.parse(u).email || "" : "";
     } catch {
-      setUserEmail("");
+      return "";
     }
-  }, [loggedIn]);
+  });
 
   const roleColors = {
     admin: { bg: "bg-purple-500/10", border: "border-purple-500/30", text: "text-purple-400" },

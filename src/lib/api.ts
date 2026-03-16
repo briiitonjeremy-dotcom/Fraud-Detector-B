@@ -691,13 +691,14 @@ export async function createAnalystCase(
         ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
       },
       body: JSON.stringify({
+        analysis_mode: "single_transaction",
         transaction_id: transactionId,
         transaction: transactionData,
       }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       return { success: false, error: error.error || "Failed to create case" };
     }
 
@@ -705,6 +706,60 @@ export async function createAnalystCase(
     return { success: true, case: data.case };
   } catch (error) {
     console.error("[API] Error creating analyst case:", error);
+    return { success: false, error: "Network error" };
+  }
+}
+
+// ─── Overall / Bulk Transaction Analysis ────────────────────────────────────
+
+export type OverallAnalysisScope =
+  | "all_flagged"
+  | "high_risk"
+  | "medium_risk"
+  | "date_range"
+  | "by_account"
+  | "by_risk_level";
+
+export interface OverallAnalysisFilters {
+  risk_level?: string;
+  date_from?: string;
+  date_to?: string;
+  account?: string;
+  min_score?: number;
+}
+
+export async function createOverallAnalysisCase(
+  scope: OverallAnalysisScope,
+  filters: OverallAnalysisFilters,
+  transactions: Record<string, any>[]
+): Promise<{ success: boolean; case?: AnalystCase; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(proxyUrl("analyst/cases"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({
+        analysis_mode: "overall_analysis",
+        scope,
+        filters,
+        // Send up to 50 transactions for bulk analysis to avoid payload bloat
+        transactions: transactions.slice(0, 50),
+        transaction_count: transactions.length,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return { success: false, error: error.error || "Failed to create overall analysis case" };
+    }
+
+    const data = await response.json();
+    return { success: true, case: data.case };
+  } catch (error) {
+    console.error("[API] Error creating overall analysis case:", error);
     return { success: false, error: "Network error" };
   }
 }
