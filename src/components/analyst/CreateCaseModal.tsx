@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   ChevronDown,
   Info,
+  Database,
 } from "lucide-react";
 import {
   OverallAnalysisScope,
@@ -53,11 +54,26 @@ interface CreateCaseModalProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SCOPE_OPTIONS: { value: OverallAnalysisScope; label: string; description: string }[] = [
+const SCOPE_OPTIONS: {
+  value: OverallAnalysisScope;
+  label: string;
+  description: string;
+  isBatch?: boolean;
+}[] = [
+  // ── NEW: Full batch option at the top, clearly separated ──────────────────
+  {
+    value: "full_transaction_batch",
+    label: "Full Transaction Batch",
+    description:
+      "Analyze the complete uploaded dataset — legitimate and suspicious transactions together — to generate an overall AI case summary, pattern analysis, and operational risk overview.",
+    isBatch: true,
+  },
+  // ── Existing suspicious-subset options ────────────────────────────────────
   {
     value: "all_flagged",
     label: "All Flagged Transactions",
-    description: "Analyze every transaction the model flagged as suspicious",
+    description:
+      "Analyze only the subset of transactions flagged as suspicious by the fraud engine",
   },
   {
     value: "high_risk",
@@ -391,6 +407,13 @@ function OverallAnalysisForm({
     marginBottom: "0.375rem",
   };
 
+  // Pre-compute batch stats for the full_transaction_batch info panel
+  const totalTxns = transactions.length;
+  const flaggedTxns = transactions.filter(
+    (t) => t.is_fraud || normalizeFraudScore(t.fraud_score) >= 50
+  ).length;
+  const legitimateTxns = totalTxns - flaggedTxns;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {/* Scope selector */}
@@ -399,64 +422,306 @@ function OverallAnalysisForm({
           <Filter style={{ display: "inline", width: "10px", height: "10px", marginRight: "0.25rem" }} />
           Analysis Scope
         </label>
+
+        {/* ── DISTINCTION NOTE — only shown when full_transaction_batch is not selected ── */}
+        {scope !== "full_transaction_batch" && scope === "all_flagged" && (
+          <div
+            style={{
+              marginBottom: "0.5rem",
+              padding: "0.5rem 0.75rem",
+              background: "rgba(245,158,11,0.07)",
+              border: "1px solid rgba(245,158,11,0.2)",
+              borderRadius: "6px",
+              fontSize: "0.6875rem",
+              color: "#fbbf24",
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Note:</strong> &ldquo;All Flagged Transactions&rdquo; only includes transactions
+            the fraud engine marked suspicious. To analyze the entire uploaded dataset (flagged +
+            legitimate), select <strong>Full Transaction Batch</strong> above.
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-          {SCOPE_OPTIONS.map((opt) => {
+          {SCOPE_OPTIONS.map((opt, idx) => {
             const active = scope === opt.value;
+            const isBatch = opt.isBatch === true;
+
+            // Teal accent for the batch option; purple for the rest
+            const activeColor = isBatch ? "#06b6d4" : "#a855f7";
+            const activeBg = isBatch ? "rgba(6,182,212,0.1)" : "rgba(168,85,247,0.1)";
+            const activeBorder = isBatch ? "rgba(6,182,212,0.35)" : "rgba(168,85,247,0.35)";
+            const activeText = isBatch ? "#06b6d4" : "#c084fc";
+
+            // Visual separator between Full Batch and the suspicious-subset options
+            const showDivider = idx === 1;
+
             return (
-              <button
-                key={opt.value}
-                onClick={() => onScopeChange(opt.value)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.625rem",
-                  padding: "0.5rem 0.75rem",
-                  background: active ? "rgba(168,85,247,0.1)" : "rgba(0,0,0,0.15)",
-                  border: `1px solid ${active ? "rgba(168,85,247,0.35)" : "rgba(255,255,255,0.06)"}`,
-                  borderRadius: "7px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  width: "100%",
-                }}
-              >
-                <div
-                  style={{
-                    width: "14px",
-                    height: "14px",
-                    borderRadius: "50%",
-                    border: `2px solid ${active ? "#a855f7" : "rgba(255,255,255,0.2)"}`,
-                    background: active ? "#a855f7" : "transparent",
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {active && (
-                    <div
-                      style={{ width: "5px", height: "5px", borderRadius: "50%", background: "white" }}
-                    />
-                  )}
-                </div>
-                <div>
+              <div key={opt.value}>
+                {showDivider && (
                   <div
                     style={{
-                      fontSize: "0.8125rem",
-                      fontWeight: 600,
-                      color: active ? "#c084fc" : "var(--text-primary)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      margin: "0.25rem 0",
                     }}
                   >
-                    {opt.label}
+                    <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.07)" }} />
+                    <span
+                      style={{
+                        fontSize: "0.625rem",
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Suspicious Subset Options
+                    </span>
+                    <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.07)" }} />
                   </div>
-                  <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-                    {opt.description}
+                )}
+                <button
+                  onClick={() => onScopeChange(opt.value)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.625rem",
+                    padding: "0.5rem 0.75rem",
+                    background: active ? activeBg : "rgba(0,0,0,0.15)",
+                    border: `1px solid ${active ? activeBorder : "rgba(255,255,255,0.06)"}`,
+                    borderRadius: "7px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    width: "100%",
+                  }}
+                >
+                  {/* Radio dot */}
+                  <div
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      borderRadius: "50%",
+                      border: `2px solid ${active ? activeColor : "rgba(255,255,255,0.2)"}`,
+                      background: active ? activeColor : "transparent",
+                      flexShrink: 0,
+                      marginTop: "2px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {active && (
+                      <div
+                        style={{ width: "5px", height: "5px", borderRadius: "50%", background: "white" }}
+                      />
+                    )}
                   </div>
-                </div>
-              </button>
+
+                  {/* Icon for batch scope */}
+                  {isBatch && (
+                    <Database
+                      style={{
+                        width: "14px",
+                        height: "14px",
+                        color: active ? "#06b6d4" : "#64748b",
+                        flexShrink: 0,
+                        marginTop: "2px",
+                      }}
+                    />
+                  )}
+
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        marginBottom: "0.125rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.8125rem",
+                          fontWeight: 600,
+                          color: active ? activeText : "var(--text-primary)",
+                        }}
+                      >
+                        {opt.label}
+                      </span>
+                      {isBatch && (
+                        <span
+                          style={{
+                            fontSize: "0.5625rem",
+                            fontWeight: 700,
+                            letterSpacing: "0.06em",
+                            padding: "0.1rem 0.4rem",
+                            borderRadius: "4px",
+                            background: active
+                              ? "rgba(6,182,212,0.2)"
+                              : "rgba(6,182,212,0.08)",
+                            color: "#06b6d4",
+                            border: "1px solid rgba(6,182,212,0.3)",
+                          }}
+                        >
+                          FULL DATASET
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                      {opt.description}
+                    </div>
+                  </div>
+                </button>
+              </div>
             );
           })}
         </div>
       </div>
+
+      {/* ── Full Transaction Batch stats panel ─────────────────────────────── */}
+      {scope === "full_transaction_batch" && (
+        <div
+          style={{
+            padding: "1rem",
+            background: "rgba(6,182,212,0.07)",
+            border: "1px solid rgba(6,182,212,0.25)",
+            borderRadius: "10px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "0.75rem",
+            }}
+          >
+            <Database style={{ width: "14px", height: "14px", color: "#06b6d4" }} />
+            <span
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                color: "#06b6d4",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Dataset Overview
+            </span>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: "0.5rem",
+              marginBottom: "0.75rem",
+            }}
+          >
+            {[
+              { label: "Total Transactions", value: totalTxns, color: "#06b6d4" },
+              { label: "Flagged / Suspicious", value: flaggedTxns, color: "#ef4444" },
+              { label: "Legitimate / Non-Flagged", value: legitimateTxns, color: "#10b981" },
+            ].map(({ label, value, color }) => (
+              <div
+                key={label}
+                style={{
+                  padding: "0.625rem 0.75rem",
+                  background: "rgba(0,0,0,0.25)",
+                  borderRadius: "8px",
+                  border: `1px solid ${color}25`,
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{ fontSize: "1.25rem", fontWeight: 800, color, lineHeight: 1.1 }}
+                >
+                  {value}
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.625rem",
+                    color: "var(--text-muted)",
+                    marginTop: "0.25rem",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Proportion bar */}
+          {totalTxns > 0 && (
+            <div style={{ marginBottom: "0.75rem" }}>
+              <div
+                style={{
+                  height: "6px",
+                  borderRadius: "3px",
+                  background: "rgba(255,255,255,0.07)",
+                  overflow: "hidden",
+                  display: "flex",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${(flaggedTxns / totalTxns) * 100}%`,
+                    background: "linear-gradient(90deg, #ef4444, #f59e0b)",
+                    borderRadius: "3px 0 0 3px",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+                <div
+                  style={{
+                    flex: 1,
+                    background: "rgba(16,185,129,0.4)",
+                    borderRadius: "0 3px 3px 0",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginTop: "0.25rem",
+                  fontSize: "0.625rem",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <span style={{ color: "#f87171" }}>
+                  {totalTxns > 0
+                    ? `${((flaggedTxns / totalTxns) * 100).toFixed(0)}% suspicious`
+                    : ""}
+                </span>
+                <span style={{ color: "#34d399" }}>
+                  {totalTxns > 0
+                    ? `${((legitimateTxns / totalTxns) * 100).toFixed(0)}% legitimate`
+                    : ""}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <p
+            style={{
+              fontSize: "0.6875rem",
+              color: "var(--text-muted)",
+              lineHeight: 1.55,
+              margin: 0,
+            }}
+          >
+            The AI will analyze all{" "}
+            <strong style={{ color: "var(--text-secondary)" }}>{totalTxns}</strong> uploaded
+            transactions together — both legitimate and suspicious — to generate an overall
+            operational risk summary, detect notable patterns, and assess whether suspicious
+            activity appears isolated or indicative of a broader trend.
+          </p>
+        </div>
+      )}
 
       {/* Conditional filters */}
       {scope === "date_range" && (
@@ -565,42 +830,71 @@ function OverallAnalysisForm({
         </div>
       )}
 
-      {/* Transaction match preview */}
-      <div
-        style={{
-          padding: "0.625rem 0.875rem",
-          background:
-            matchCount > 0 ? "rgba(168,85,247,0.08)" : "rgba(100,116,139,0.08)",
-          border: `1px solid ${matchCount > 0 ? "rgba(168,85,247,0.25)" : "rgba(100,116,139,0.2)"}`,
-          borderRadius: "8px",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-        }}
-      >
-        <Layers
+      {/* Transaction match preview — batch scope shows split; others show count */}
+      {scope === "full_transaction_batch" ? (
+        // The detailed stats panel is already rendered above for full_transaction_batch.
+        // Show a compact summary badge here instead of the generic count pill.
+        <div
           style={{
-            width: "14px",
-            height: "14px",
-            color: matchCount > 0 ? "#c084fc" : "#64748b",
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontSize: "0.8125rem",
-            color: matchCount > 0 ? "#c084fc" : "var(--text-muted)",
-            fontWeight: 600,
+            padding: "0.5rem 0.875rem",
+            background: "rgba(6,182,212,0.08)",
+            border: "1px solid rgba(6,182,212,0.2)",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
           }}
         >
-          {matchCount} transaction{matchCount !== 1 ? "s" : ""} match this scope
-        </span>
-        {matchCount > 50 && (
-          <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginLeft: "auto" }}>
-            First 50 sent to backend
+          <Database style={{ width: "13px", height: "13px", color: "#06b6d4", flexShrink: 0 }} />
+          <span style={{ fontSize: "0.8125rem", color: "#06b6d4", fontWeight: 600 }}>
+            {matchCount} transaction{matchCount !== 1 ? "s" : ""} in dataset
           </span>
-        )}
-      </div>
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: "0.6875rem",
+              color: "var(--text-muted)",
+            }}
+          >
+            {matchCount > 50 ? "First 50 sent to backend" : "Full set included"}
+          </span>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "0.625rem 0.875rem",
+            background: matchCount > 0 ? "rgba(168,85,247,0.08)" : "rgba(100,116,139,0.08)",
+            border: `1px solid ${matchCount > 0 ? "rgba(168,85,247,0.25)" : "rgba(100,116,139,0.2)"}`,
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          <Layers
+            style={{
+              width: "14px",
+              height: "14px",
+              color: matchCount > 0 ? "#c084fc" : "#64748b",
+              flexShrink: 0,
+            }}
+          />
+          <span
+            style={{
+              fontSize: "0.8125rem",
+              color: matchCount > 0 ? "#c084fc" : "var(--text-muted)",
+              fontWeight: 600,
+            }}
+          >
+            {matchCount} transaction{matchCount !== 1 ? "s" : ""} match this scope
+          </span>
+          {matchCount > 50 && (
+            <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginLeft: "auto" }}>
+              First 50 sent to backend
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Future feature notice */}
       <div
@@ -640,9 +934,13 @@ export default function CreateCaseModal({
   const [scope, setScope] = useState<OverallAnalysisScope>("all_flagged");
   const [filters, setFilters] = useState<OverallAnalysisFilters>({});
 
-  // Compute which transactions match the current overall analysis scope
+  // Compute which transactions match the current overall analysis scope.
+  // full_transaction_batch returns ALL transactions (flagged + legitimate).
   const matchingTransactions = useMemo(() => {
     if (mode !== "overall_analysis") return [];
+
+    // Full batch: every uploaded transaction, no filtering
+    if (scope === "full_transaction_batch") return transactions;
 
     return transactions.filter((t) => {
       const score = normalizeFraudScore(t.fraud_score);
@@ -864,25 +1162,54 @@ export default function CreateCaseModal({
             flexShrink: 0,
           }}
         >
-          {/* Mode badge */}
-          <span
-            style={{
-              fontSize: "0.6875rem",
-              color: mode === "single_transaction" ? "#06b6d4" : "#c084fc",
-              background:
-                mode === "single_transaction"
-                  ? "rgba(6,182,212,0.1)"
-                  : "rgba(168,85,247,0.1)",
-              border: `1px solid ${mode === "single_transaction" ? "rgba(6,182,212,0.25)" : "rgba(168,85,247,0.25)"}`,
-              padding: "0.2rem 0.6rem",
-              borderRadius: "4px",
-              fontWeight: 600,
-            }}
-          >
-            {mode === "single_transaction"
-              ? "Single Transaction"
-              : `Overall Analysis · ${matchingTransactions.length} txns`}
-          </span>
+          {/* Mode / scope badge */}
+          {mode === "single_transaction" ? (
+            <span
+              style={{
+                fontSize: "0.6875rem",
+                color: "#06b6d4",
+                background: "rgba(6,182,212,0.1)",
+                border: "1px solid rgba(6,182,212,0.25)",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "4px",
+                fontWeight: 600,
+              }}
+            >
+              Single Transaction
+            </span>
+          ) : scope === "full_transaction_batch" ? (
+            <span
+              style={{
+                fontSize: "0.6875rem",
+                color: "#06b6d4",
+                background: "rgba(6,182,212,0.1)",
+                border: "1px solid rgba(6,182,212,0.3)",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "4px",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.3rem",
+              }}
+            >
+              <Database style={{ width: "11px", height: "11px" }} />
+              Full Batch · {matchingTransactions.length} txns
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: "0.6875rem",
+                color: "#c084fc",
+                background: "rgba(168,85,247,0.1)",
+                border: "1px solid rgba(168,85,247,0.25)",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "4px",
+                fontWeight: 600,
+              }}
+            >
+              Overall Analysis · {matchingTransactions.length} txns
+            </span>
+          )}
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button

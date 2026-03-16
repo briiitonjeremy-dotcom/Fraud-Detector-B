@@ -533,9 +533,11 @@ export default function AnalystPage() {
   };
 
   useEffect(() => {
+    // Data fetching on mount — standard React pattern for initial load
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCases();
     loadTransactions();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // mount-only
 
   const handleSelectCase = async (caseId: string) => {
     setIsLoading(true);

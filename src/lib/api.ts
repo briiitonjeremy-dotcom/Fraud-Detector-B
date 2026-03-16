@@ -713,6 +713,7 @@ export async function createAnalystCase(
 // ─── Overall / Bulk Transaction Analysis ────────────────────────────────────
 
 export type OverallAnalysisScope =
+  | "full_transaction_batch"   // ← NEW: entire uploaded dataset, flagged + legitimate
   | "all_flagged"
   | "high_risk"
   | "medium_risk"
@@ -726,6 +727,7 @@ export interface OverallAnalysisFilters {
   date_to?: string;
   account?: string;
   min_score?: number;
+  dataset_id?: string;         // ← NEW: optional dataset identifier for full-batch scope
 }
 
 export async function createOverallAnalysisCase(
@@ -744,8 +746,16 @@ export async function createOverallAnalysisCase(
       body: JSON.stringify({
         analysis_mode: "overall_analysis",
         scope,
-        filters,
-        // Send up to 50 transactions for bulk analysis to avoid payload bloat
+        filters: {
+          ...filters,
+          // Attach a stable identifier for full-batch scopes so the backend
+          // can reference the full dataset even when only a sample is sent
+          ...(scope === "full_transaction_batch"
+            ? { dataset_id: filters.dataset_id || "current_upload" }
+            : {}),
+        },
+        // Send up to 50 transactions as a representative sample.
+        // For full_transaction_batch the backend also receives total counts.
         transactions: transactions.slice(0, 50),
         transaction_count: transactions.length,
       }),
