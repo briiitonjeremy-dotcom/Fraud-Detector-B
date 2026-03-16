@@ -106,7 +106,7 @@ export default function ApiTestPage() {
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       
       // Try /health endpoint first (more reliable)
-      let response = await fetch(`${mlServiceUrl}/health`, {
+      let response = await fetch(`/api/proxy/health`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal
@@ -114,7 +114,7 @@ export default function ApiTestPage() {
       
       // If /health fails, try root endpoint
       if (!response.ok) {
-        response = await fetch(`${mlServiceUrl}/`, {
+        response = await fetch(`/api/proxy/health`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal
@@ -158,7 +158,7 @@ export default function ApiTestPage() {
     const startTime = Date.now();
 
     try {
-      let url = `${mlServiceUrl}${endpoint.path}`;
+      let url = `/api/proxy${endpoint.path}`;
       let options: RequestInit = {
         method: endpoint.method,
         headers: {

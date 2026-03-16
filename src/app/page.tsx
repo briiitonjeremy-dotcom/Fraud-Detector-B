@@ -491,13 +491,13 @@ export default function Dashboard() {
 
   const checkMlServiceHealth = async () => {
     try {
-      let response = await fetch(`${ML_SERVICE_URL}/health`, {
+      let response = await fetch(`/api/proxy/health`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });
       
       if (!response.ok) {
-        response = await fetch(`${ML_SERVICE_URL}/`, {
+        response = await fetch(`/api/proxy/health`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         });

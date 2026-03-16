@@ -62,14 +62,14 @@ export default function UploadPage() {
     const checkServiceStatus = async () => {
       try {
         // Try /health endpoint first (more reliable)
-        let response = await fetch(`${ML_SERVICE_URL}/health`, {
+        let response = await fetch(`/api/proxy/health`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         });
         
         // If /health fails, try root endpoint
         if (!response.ok) {
-          response = await fetch(`${ML_SERVICE_URL}/`, {
+          response = await fetch(`/api/proxy/health`, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
           });
@@ -191,7 +191,7 @@ export default function UploadPage() {
       const timeoutId = setTimeout(() => controller.abort(), 180000);
       
       // Send to ML /predict endpoint (more reliable than /process-dataset)
-      const response = await fetch(`${ML_SERVICE_URL}/predict`, {
+      const response = await fetch(`/api/proxy/predict`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

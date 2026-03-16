@@ -1,7 +1,27 @@
 // Safe fetch helper for admin dashboard
-// Uses Flask backend on Render instead of direct database access
+// All requests are routed through the Next.js /api/proxy/* server-side route.
+// This avoids CORS entirely — the browser only ever talks to the same Vercel
+// origin, and the proxy forwards the request to the Flask backend server-side.
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
+// Direct backend URL (used only by the server-side proxy, never from the browser)
+const DIRECT_BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://ml-file-for-url.onrender.com";
+
+// All client-side fetches go through /api/proxy which forwards to DIRECT_BACKEND_URL
+function proxyUrl(path: string): string {
+  // path should NOT start with a slash, e.g. "analyst/cases"
+  const clean = path.replace(/^\/+/, "");
+  // In a browser context use a relative URL so it always hits the right Vercel domain.
+  // In a Node/SSR context (e.g. server components) fall back to the direct URL.
+  if (typeof window !== "undefined") {
+    return `/api/proxy/${clean}`;
+  }
+  return `${DIRECT_BACKEND_URL}/${clean}`;
+}
+
+// Keep this for any code that still reads API_BASE_URL directly.
+// New code should use proxyUrl() instead.
+const API_BASE_URL = DIRECT_BACKEND_URL;
 
 // ============== AUTHENTICATION TYPES ==============
 
@@ -61,7 +81,7 @@ export async function loginToBackend(
   password: string
 ): Promise<LoginResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/login`, {
+    const response = await fetch(proxyUrl("login"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -118,7 +138,7 @@ export async function verifyOTPOnBackend(
   otpCode: string
 ): Promise<VerifyOTPResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/login/verify`, {
+    const response = await fetch(proxyUrl("login/verify"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -179,7 +199,7 @@ export async function resendOTPOnBackend(
   tempToken: string
 ): Promise<ResendOTPResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/login/resend`, {
+    const response = await fetch(proxyUrl("login/resend"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -233,7 +253,7 @@ export async function requestPasswordResetOnBackend(
   email: string
 ): Promise<RequestPasswordResetResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/login/forgot-password`, {
+    const response = await fetch(proxyUrl("login/forgot-password"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -273,7 +293,7 @@ export async function resetPasswordOnBackend(
   newPassword: string
 ): Promise<ResetPasswordResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/login/reset-password`, {
+    const response = await fetch(proxyUrl("login/reset-password"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -435,7 +455,7 @@ export async function safeFetch<T>(
 // Fetch users from backend
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
   const data = await safeFetch<{ users: AdminUser[] }>(
-    `${API_BASE_URL}/admin/users`
+    proxyUrl("admin/users")
   );
   return data?.users || [];
 }
@@ -443,7 +463,7 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
 // Fetch transactions from backend
 export async function fetchAdminTransactions(): Promise<AdminTransaction[]> {
   const data = await safeFetch<{ transactions: AdminTransaction[] }>(
-    `${API_BASE_URL}/admin/transactions`
+    proxyUrl("admin/transactions")
   );
   return data?.transactions || [];
 }
@@ -451,7 +471,7 @@ export async function fetchAdminTransactions(): Promise<AdminTransaction[]> {
 // Fetch admin logs from backend
 export async function fetchAdminLogs(): Promise<AdminLog[]> {
   const data = await safeFetch<{ logs: AdminLog[] }>(
-    `${API_BASE_URL}/admin/logs`
+    proxyUrl("admin/logs")
   );
   return data?.logs || [];
 }
@@ -459,9 +479,9 @@ export async function fetchAdminLogs(): Promise<AdminLog[]> {
 // Fetch admin stats from backend
 export async function fetchAdminStats(): Promise<AdminStats> {
   const data = await safeFetch<{ stats: AdminStats }>(
-    `${API_BASE_URL}/admin/stats`
+    proxyUrl("admin/stats")
   );
-  return data?.stats || {
+  return (data as any)?.stats || {
     total_users: 0,
     total_transactions: 0,
     total_logs: 0,
@@ -477,7 +497,7 @@ export async function addUserToBackend(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/admin/users`, {
+    const response = await fetch(proxyUrl("admin/users"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -515,7 +535,7 @@ export async function deleteUserFromBackend(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+    const response = await fetch(proxyUrl(`admin/users/${userId}`), {
       method: "DELETE",
       headers: {
         ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
@@ -547,7 +567,7 @@ export async function toggleUserStatusBackend(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/status`, {
+    const response = await fetch(proxyUrl(`admin/users/${userId}/status`), {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -646,14 +666,14 @@ export function requireAdmin(): boolean {
 
 export async function fetchAnalystCases(): Promise<AnalystCase[]> {
   const data = await safeFetch<{ cases: AnalystCase[] }>(
-    `${API_BASE_URL}/analyst/cases`
+    proxyUrl("analyst/cases")
   );
   return data?.cases || [];
 }
 
 export async function fetchAnalystCase(caseId: string): Promise<AnalystCase | null> {
   const data = await safeFetch<{ case: AnalystCase }>(
-    `${API_BASE_URL}/analyst/cases/${caseId}`
+    proxyUrl(`analyst/cases/${caseId}`)
   );
   return data?.case || null;
 }
@@ -664,7 +684,7 @@ export async function createAnalystCase(
 ): Promise<{ success: boolean; case?: AnalystCase; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/cases`, {
+    const response = await fetch(proxyUrl("analyst/cases"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -695,7 +715,7 @@ export async function askAnalystChat(
 ): Promise<{ success: boolean; response?: string; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/chat`, {
+    const response = await fetch(proxyUrl("analyst/chat"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -727,7 +747,7 @@ export async function submitCaseReview(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/review`, {
+    const response = await fetch(proxyUrl("analyst/review"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -755,7 +775,7 @@ export async function submitCaseReview(
 
 export async function fetchCaseReviews(caseId: string): Promise<CaseReview[]> {
   const data = await safeFetch<{ reviews: CaseReview[] }>(
-    `${API_BASE_URL}/analyst/reviews/${caseId}`
+    proxyUrl(`analyst/reviews/${caseId}`)
   );
   return data?.reviews || [];
 }
@@ -766,7 +786,7 @@ export async function exportCaseReport(
 ): Promise<{ success: boolean; url?: string; content?: string; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/export`, {
+    const response = await fetch(proxyUrl(`analyst/cases/${caseId}/export`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -794,7 +814,7 @@ export async function requestMoreEvidence(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/request-evidence`, {
+    const response = await fetch(proxyUrl(`analyst/cases/${caseId}/request-evidence`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -821,7 +841,7 @@ export async function sendCaseForReview(
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     const sessionToken = localStorage.getItem("session_token");
-    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/send-review`, {
+    const response = await fetch(proxyUrl(`analyst/cases/${caseId}/send-review`), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

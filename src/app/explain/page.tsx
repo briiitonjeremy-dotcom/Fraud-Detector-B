@@ -104,14 +104,14 @@ export default function ExplainPage() {
     const checkServiceStatus = async () => {
       try {
         // Try /health endpoint first (more reliable)
-        let response = await fetch(`${ML_SERVICE_URL}/health`, {
+        let response = await fetch(`/api/proxy/health`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         });
         
         // If /health fails, try root endpoint
         if (!response.ok) {
-          response = await fetch(`${ML_SERVICE_URL}/`, {
+          response = await fetch(`/api/proxy/health`, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
           });
@@ -223,7 +223,7 @@ export default function ExplainPage() {
       }
       
       // If not found, try ML service /explain endpoint
-      const response = await fetch(`${ML_SERVICE_URL}/explain/${transactionId}`, {
+      const response = await fetch(`/api/proxy/explain/${transactionId}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
