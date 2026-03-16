@@ -11,7 +11,8 @@ import {
   LogOut, 
   Shield,
   User,
-  Activity
+  Activity,
+  Bot
 } from "lucide-react";
 
 interface SidebarProps {
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/upload", icon: Upload, label: "Upload Dataset" },
   { href: "/explain", icon: BrainCircuit, label: "Explain" },
+  { href: "/analyst", icon: Bot, label: "Analyst AI" },
   { href: "/api-test", icon: Zap, label: "API Test" },
   { href: "/admin", icon: Settings, label: "Admin" },
 ];

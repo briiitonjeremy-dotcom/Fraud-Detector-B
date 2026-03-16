@@ -759,3 +759,60 @@ export async function fetchCaseReviews(caseId: string): Promise<CaseReview[]> {
   );
   return data?.reviews || [];
 }
+
+export async function exportCaseReport(
+  caseId: string,
+  format: "pdf" | "json" | "csv"
+): Promise<{ success: boolean; url?: string; data?: string; error?: string }> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(`${API_BASE_URL}/analyst/cases/${caseId}/export?format=${format}`, {
+      method: "GET",
+      headers: {
+        ...(sessionToken ? { "Authorization": `Bearer ${sessionToken}` } : {}),
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Export failed (${response.status})` };
+    }
+
+    // For JSON/CSV, return the text content
+    if (format === "json" || format === "csv") {
+      const text = await response.text();
+      return { success: true, data: text };
+    }
+
+    // For PDF, return blob URL
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    return { success: true, url };
+  } catch (error) {
+    console.error("[API] Error exporting case report:", error);
+    return { success: false, error: "Network error during export" };
+  }
+}
+
+export async function fetchCaseStatistics(): Promise<{
+  total_cases: number;
+  open_cases: number;
+  high_risk_cases: number;
+  escalated_cases: number;
+  reviewed_cases: number;
+}> {
+  const data = await safeFetch<{
+    total_cases: number;
+    open_cases: number;
+    high_risk_cases: number;
+    escalated_cases: number;
+    reviewed_cases: number;
+  }>(`${API_BASE_URL}/analyst/stats`);
+  return data || {
+    total_cases: 0,
+    open_cases: 0,
+    high_risk_cases: 0,
+    escalated_cases: 0,
+    reviewed_cases: 0,
+  };
+}
