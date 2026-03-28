@@ -16,6 +16,7 @@ import {
   fetchAdminTransactions,
   fetchCaseReviews,
   sendCaseForReview,
+  submitCaseToFRC,
   AnalystCase,
   AnalystChatMessage,
   CaseReview,
@@ -503,6 +504,12 @@ export default function AnalystPage() {
     submitting: false,
     message: "",
   });
+  const [frcStatus, setFrcStatus] = useState<{
+    submitting: boolean;
+    success: boolean | null;
+    message: string;
+    frcCaseId: string | null;
+  }>({ submitting: false, success: null, message: "", frcCaseId: null });
   // These must start as null/false on both server and client to avoid
   // React hydration mismatch (error #418). useEffect sets them client-side.
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -662,6 +669,25 @@ export default function AnalystPage() {
     }
   };
 
+  const handleSubmitToFRC = async (force = false) => {
+    if (!selectedCase) return;
+    setFrcStatus({ submitting: true, success: null, message: "Submitting to FRC...", frcCaseId: null });
+    const result = await submitCaseToFRC(selectedCase.case_id, force);
+    setFrcStatus({
+      submitting: false,
+      success: result.success,
+      message: result.message || (result.success ? "Submitted to FRC successfully." : result.error || "Submission failed."),
+      frcCaseId: result.frc_case_id || null,
+    });
+    if (result.success) {
+      // Refresh the case to show frc_case_id and updated status
+      const updated = await fetchAnalystCase(selectedCase.case_id);
+      if (updated) setSelectedCase(updated);
+      await loadCases();
+    }
+    setTimeout(() => setFrcStatus({ submitting: false, success: null, message: "", frcCaseId: null }), 8000);
+  };
+
   const handleLogout = () => {
     logout();
     window.location.href = "/";
@@ -811,6 +837,75 @@ export default function AnalystPage() {
                   }}
                 >
                   <CaseOverviewPanel caseData={selectedCase} />
+
+                  {/* FRC Submission row */}
+                  <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    {/* Show existing FRC case ID if already submitted */}
+                    {(selectedCase as any).frc_case_id ? (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: "0.5rem",
+                        padding: "0.375rem 0.75rem",
+                        background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.25)",
+                        borderRadius: "6px", fontSize: "0.75rem",
+                      }}>
+                        <span style={{ color: "#10b981", fontWeight: 600 }}>✓ FRC Case:</span>
+                        <span style={{ color: "#6ee7b7", fontFamily: "monospace" }}>{(selectedCase as any).frc_case_id}</span>
+                        <button
+                          onClick={() => handleSubmitToFRC(true)}
+                          disabled={frcStatus.submitting}
+                          style={{
+                            marginLeft: "0.25rem", padding: "0.1rem 0.5rem",
+                            background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)",
+                            borderRadius: "4px", color: "#10b981", cursor: "pointer",
+                            fontSize: "0.6875rem",
+                          }}
+                        >
+                          Re-submit
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleSubmitToFRC(false)}
+                        disabled={frcStatus.submitting}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "0.375rem",
+                          padding: "0.375rem 0.875rem",
+                          background: frcStatus.submitting ? "rgba(6,182,212,0.05)" : "rgba(6,182,212,0.12)",
+                          border: "1px solid rgba(6,182,212,0.3)",
+                          borderRadius: "6px", cursor: frcStatus.submitting ? "not-allowed" : "pointer",
+                          color: "#06b6d4", fontSize: "0.8125rem", fontWeight: 600,
+                          opacity: frcStatus.submitting ? 0.6 : 1,
+                        }}
+                      >
+                        {frcStatus.submitting ? (
+                          <>
+                            <span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(6,182,212,0.3)", borderTopColor: "#06b6d4", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                            Submitting...
+                          </>
+                        ) : (
+                          <>↗ Submit to FRC</>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Status feedback */}
+                    {frcStatus.message && (
+                      <span style={{
+                        fontSize: "0.75rem",
+                        color: frcStatus.success === true ? "#10b981" : frcStatus.success === false ? "#ef4444" : "#94a3b8",
+                        fontWeight: 500,
+                      }}>
+                        {frcStatus.success === true && "✓ "}
+                        {frcStatus.success === false && "✗ "}
+                        {frcStatus.message}
+                        {frcStatus.frcCaseId && frcStatus.success && (
+                          <span style={{ marginLeft: "0.375rem", fontFamily: "monospace", color: "#6ee7b7" }}>
+                            [{frcStatus.frcCaseId}]
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Tab navigation */}

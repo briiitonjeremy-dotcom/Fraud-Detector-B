@@ -927,3 +927,51 @@ export async function sendCaseForReview(
     return { success: false, error: "Network error" };
   }
 }
+
+// ─── FRC Integration ─────────────────────────────────────────────────────────
+
+export interface FRCSubmissionResult {
+  success: boolean;
+  frc_case_id?: string;
+  status?: string;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Submit a FraudGuard analyst case directly to the FRC backend intake endpoint.
+ * Pass force=true to re-submit even if the case was already submitted.
+ */
+export async function submitCaseToFRC(
+  caseId: string,
+  force = false
+): Promise<FRCSubmissionResult> {
+  try {
+    const sessionToken = localStorage.getItem("session_token");
+    const response = await fetch(proxyUrl(`analyst/cases/${caseId}/submit-to-frc`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({ force }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok && response.status !== 502) {
+      return { success: false, error: data.error || "Failed to submit to FRC" };
+    }
+
+    return {
+      success: data.success ?? false,
+      frc_case_id: data.frc_case_id,
+      status: data.status,
+      message: data.message,
+      error: data.error,
+    };
+  } catch (error) {
+    console.error("[API] Error submitting case to FRC:", error);
+    return { success: false, error: "Network error — could not reach backend" };
+  }
+}
