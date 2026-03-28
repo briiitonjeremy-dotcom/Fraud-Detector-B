@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// BACKEND_URL must point to the FraudGuard ML backend.
+// Use FRAUDGUARD_ML_URL (server-side only, not exposed to browser) as the
+// primary env var, with BACKEND_URL as a legacy alias.
+// NEXT_PUBLIC_API_URL is intentionally NOT used here because it may be set
+// to a different service (e.g. the FRC backend) in deployments.
 const BACKEND_URL =
+  process.env.FRAUDGUARD_ML_URL ||
   process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
   "https://ml-file-for-url.onrender.com";
 
 // Headers that must be stripped from the forwarded request so Node's fetch

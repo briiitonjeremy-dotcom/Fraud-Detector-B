@@ -154,55 +154,37 @@ export default function UploadPage() {
     const startTime = Date.now();
 
     try {
-      // Read file content
+      // Read raw CSV content — send it directly to /process-dataset which lets
+      // pandas handle parsing, avoiding manual type-conversion bugs that cause 422.
       const fileContent = await file.text();
-      
-      // Parse CSV into transaction objects for /predict endpoint
-      const lines = fileContent.split('\n').filter(line => line.trim());
-      const headers = lines[0].split(',').map(h => h.trim());
-      
-      // Map CSV columns to transaction format
-      const transactions: any[] = [];
-      const maxTransactions = Math.min(lines.length - 1, 1000); // Limit to 1000 transactions
-      
-      for (let i = 1; i <= maxTransactions; i++) {
-        if (!lines[i]) continue;
-        const values = lines[i].split(',').map(v => v.trim());
-        const row: any = {};
-        
-        headers.forEach((header, idx) => {
-          const value = values[idx];
-          // Convert numeric fields
-          if (['step', 'amount', 'oldbalanceOrg', 'newbalanceOrig', 'oldbalanceDest', 'newbalanceDest'].includes(header)) {
-            row[header] = parseFloat(value) || 0;
-          } else {
-            row[header] = value;
-          }
-        });
-        
-        transactions.push(row);
-      }
 
-      console.log(`[Upload] Sending ${transactions.length} transactions to ML service /predict...`);
-      setUploadProgress(`Analyzing ${transactions.length} transactions... ML model is processing your file, please wait...`);
-      
+      // Count rows for the progress message (subtract header)
+      const rowCount = fileContent.split('\n').filter(l => l.trim()).length - 1;
+      const capped = Math.min(rowCount, 5000);
+
+      console.log(`[Upload] Sending ${capped} transactions to ML service /process-dataset...`);
+      setUploadProgress(`Analyzing ${capped} transactions... ML model is processing your file, please wait...`);
+
       // Create timeout controller (180 seconds = 3 minutes)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 180000);
-      
-      // Send to ML /predict endpoint (more reliable than /process-dataset)
-      const response = await fetch(`/api/proxy/predict`, {
+
+      // ── Use /process-dataset: send raw CSV string ──────────────────────────
+      // This is more robust than /predict because pandas read_csv handles all
+      // column types automatically — no manual float conversion needed.
+      const response = await fetch(`/api/proxy/process-dataset`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
         body: JSON.stringify({
-          transactions: transactions
+          csv_content: fileContent,
+          file_name: file.name,
         }),
         signal: controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
 
       const processingTime = Date.now() - startTime;
@@ -210,65 +192,42 @@ export default function UploadPage() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("[Upload] ML response data:", data);
+        console.log("[Upload] ML response data (batch_id, counts):", {
+          batch_id: data.batch_id,
+          total: data.total_rows,
+          flagged: data.flagged_count,
+          high: data.high_risk_count,
+        });
         setUploadProgress("Processing results...");
-        
-        // Extract predictions from ML response - /predict returns predictions array
-        const predictions = data.predictions || data.results || [];
-        
-        // Map predictions to transactions - combine original transaction data with ML predictions
-        const processedTransactions = transactions.map((txn: any, index: number) => {
-          const pred = predictions[index] || {};
 
-          // fraud_score is the continuous probability (0.0–1.0) returned by the
-          // ML model. prediction is a binary 0/1 flag. Always derive the display
-          // score from fraud_score, normalising to 0–100%.
-          // prediction (0 or 1) must NOT be multiplied by 100 — that produces
-          // only 0% or 100% and loses all nuance from the probability score.
-          let fraudScore = 0;
-          if (pred.fraud_score !== undefined && pred.fraud_score !== null) {
-            const raw = Number(pred.fraud_score);
-            // Backend stores 0–1 probabilities; convert to percentage
-            fraudScore = raw <= 1 ? raw * 100 : raw;
-          } else if (pred.prediction !== undefined) {
-            // Fallback: binary prediction — 1 means flagged, treat as 100%
-            fraudScore = Number(pred.prediction) === 1 ? 100 : 0;
+        // /process-dataset returns batch-level summary counts.
+        // Fetch the full batch transactions to display in the dashboard.
+        let processedTransactions: any[] = [];
+        if (data.batch_id) {
+          try {
+            const batchResp = await fetch(`/api/proxy/batches/${data.batch_id}/all`);
+            if (batchResp.ok) {
+              const batchData = await batchResp.json();
+              processedTransactions = batchData.transactions || batchData.data || [];
+            }
+          } catch (batchErr) {
+            console.warn("[Upload] Could not fetch batch transactions:", batchErr);
           }
+        }
 
-          // A transaction is fraud if the ML binary prediction says so,
-          // OR if the probability score is >= 50%
-          const isFraud =
-            pred.is_fraud === true ||
-            Number(pred.prediction) === 1 ||
-            fraudScore >= 50;
-          
+        // Normalise fraud_score to 0-100% for the dashboard
+        const finalTransactions = processedTransactions.map((txn: any, index: number) => {
+          const raw = Number(txn.fraud_score ?? 0);
+          const fraudScore = raw <= 1 ? raw * 100 : raw;
+          const isFraud = Number(txn.prediction) === 1 || fraudScore >= 50;
           return {
             ...txn,
-            step: txn.step ?? index + 1,
-            transaction_id: pred.transaction_id || txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
+            transaction_id: txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
             fraud_score: fraudScore,
-            prediction: pred.prediction,
             is_fraud: isFraud,
             risk_level: fraudScore >= 70 ? "HIGH" : fraudScore >= 50 ? "SUSPICIOUS" : fraudScore >= 30 ? "MEDIUM" : "LOW",
           };
         });
-        
-        console.log("[Upload] === DEBUG: First 3 processed transactions ===");
-        console.log("[Upload] TXN 0:", JSON.stringify(processedTransactions[0], null, 2));
-        console.log("[Upload] TXN 1:", JSON.stringify(processedTransactions[1], null, 2));
-        console.log("[Upload] TXN 2:", JSON.stringify(processedTransactions[2], null, 2));
-        console.log("[Upload] predictions[0]:", JSON.stringify(predictions[0], null, 2));
-        console.log("[Upload] transactions[0]:", JSON.stringify(transactions[0], null, 2));
-        
-        // If no predictions returned, create from raw transactions
-        const finalTransactions = processedTransactions.length > 0 ? processedTransactions : transactions.map((txn: any, index: number) => ({
-          ...txn,
-          step: txn.step ?? index + 1,
-          transaction_id: txn.transaction_id || txn.nameOrig || `TXN_${index + 1}`,
-          fraud_score: null,
-          is_fraud: false,
-          risk_level: "LOW",
-        }));
         
         // Store ML-processed results in localStorage for dashboard
         try {
@@ -309,13 +268,19 @@ export default function UploadPage() {
           console.error("[Upload] localStorage error:", e);
         }
         
+        // Use batch-level counts if no individual transactions were returned
+        const totalCount = finalTransactions.length || data.total_rows || 0;
+        const fraudCount2 = finalTransactions.length > 0
+          ? finalTransactions.filter((t: any) => t.is_fraud).length
+          : (data.flagged_count || 0);
+
         setResult({
           success: true,
-          message: `Dataset uploaded and processed successfully!`,
+          message: `Dataset processed successfully! ${data.batch_id ? `Batch: ${data.batch_id}` : ""}`,
           data: {
-            total_transactions: finalTransactions.length,
-            fraud_detected: finalTransactions.filter((t: any) => t.is_fraud).length,
-            fraud_rate: finalTransactions.length > 0 ? (finalTransactions.filter((t: any) => t.is_fraud).length / finalTransactions.length * 100) : 0
+            total_transactions: totalCount,
+            fraud_detected: fraudCount2,
+            fraud_rate: totalCount > 0 ? (fraudCount2 / totalCount * 100) : 0,
           },
           processingTime: processingTime,
         });
@@ -324,9 +289,19 @@ export default function UploadPage() {
         const errorData = await response.json().catch(() => ({}));
         console.error("[Upload] ML error response:", errorData);
         setErrorType("api_error");
+
+        // Build a helpful error message
+        let errMsg = errorData.error || errorData.message || `ML processing failed (${response.status})`;
+        if (errorData.stage) {
+          errMsg += ` [stage: ${errorData.stage}]`;
+        }
+        if (response.status === 422) {
+          errMsg = `CSV processing failed — please check your file has the required columns (step, amount, oldbalanceOrg, newbalanceOrig, oldbalanceDest, newbalanceDest, type). Detail: ${errMsg}`;
+        }
+
         setResult({
           success: false,
-          message: errorData.error || errorData.message || `ML processing failed (${response.status})`,
+          message: errMsg,
         });
         setUploadStatus("error");
       }
